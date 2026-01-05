@@ -1,0 +1,111 @@
+services:
+  # Redis服务 - 用于Celery的broker和backend
+  redis:
+    image: redis:7-alpine
+    container_name: topic_analysis_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - topic_analysis_network
+
+  # MongoDB服务 - 用于数据存储
+  mongodb:
+    image: mongo:6.0
+    container_name: topic_analysis_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    environment:
+      - MONGO_INITDB_DATABASE=test
+    restart: unless-stopped
+    networks:
+      - topic_analysis_network
+
+  # Elasticsearch服务 - 用于搜索
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: topic_analysis_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - topic_analysis_network
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # 后端应用服务
+  backend:
+    build:
+      context: ./code/back_end
+      dockerfile: Dockerfile
+    container_name: topic_analysis_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./code/back_end:/app
+      - ./dict:/app/dict
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - ES_HOST=elasticsearch:9200
+    depends_on:
+      - redis
+      - mongodb
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - topic_analysis_network
+    command: uvicorn app:main_app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker服务
+  celery_worker:
+    build:
+      context: ./code/back_end
+      dockerfile: Dockerfile
+    container_name: topic_analysis_celery_worker
+    volumes:
+      - ./code/back_end:/app
+      - ./dict:/app/dict
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - ES_HOST=elasticsearch:9200
+    depends_on:
+      - redis
+      - mongodb
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - topic_analysis_network
+    command: celery -A celery_task.worker worker --loglevel=info
+
+networks:
+  topic_analysis_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  mongodb_data:
+  mongodb_config:
+  elasticsearch_data:

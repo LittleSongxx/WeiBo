@@ -1,0 +1,46 @@
+# Python相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志文件
+*.log
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 环境变量
+.env
+.env.local
+
+# 数据目录
+data/elasticsearch/
+data/mongo/
+data/redis/
+
+# 测试相关
+tests/__pycache__/
+.tox/
+
+# OS相关
+.DS_Store
+Thumbs.db
