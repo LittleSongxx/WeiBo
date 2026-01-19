@@ -3,6 +3,7 @@
 @author: lingzhi
 * @date 2021/8/25 17:36
 """
+
 import requests
 import re
 import signal
@@ -12,7 +13,9 @@ from celery_task import celeryapp
 from dependencise import get_mongo_db
 
 
-async def get_comment_task_id(tag_task_id: str, weibo_id: str, mongo: AsyncIOMotorDatabase):
+async def get_comment_task_id(
+    tag_task_id: str, weibo_id: str, mongo: AsyncIOMotorDatabase
+):
     """
     以tag_task_id 获取评论 id
     :param tag_task_id:
@@ -21,9 +24,11 @@ async def get_comment_task_id(tag_task_id: str, weibo_id: str, mongo: AsyncIOMot
     :return:
     """
     comment_task_collection = mongo[mongo_conf.COMMENT_TASK]
-    comment_task = await comment_task_collection.find_one({'tag_task_id': tag_task_id, 'weibo_id': weibo_id})
+    comment_task = await comment_task_collection.find_one(
+        {"tag_task_id": tag_task_id, "weibo_id": weibo_id}
+    )
     if comment_task:
-        return comment_task.get('tag_comment_task_id')
+        return comment_task.get("tag_comment_task_id")
 
 
 async def getWeiboById(tag_task_id: str, weibo_id: str, mongo_db: AsyncIOMotorDatabase):
@@ -34,9 +39,11 @@ async def getWeiboById(tag_task_id: str, weibo_id: str, mongo_db: AsyncIOMotorDa
     :param mongo_db: mongo数据库对象
     :return:
     """
-    result = await mongo_db[mongo_conf.COMMENT_TASK].find_one({"tag_task_id": tag_task_id, "weibo_id": weibo_id})
+    result = await mongo_db[mongo_conf.COMMENT_TASK].find_one(
+        {"tag_task_id": tag_task_id, "weibo_id": weibo_id}
+    )
     if result:
-        return result['detail']
+        return result["detail"]
     return None
 
 
@@ -47,7 +54,9 @@ async def getByTendencyId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
     :param mongo_db:
     :return:
     """
-    item = await mongo_db[mongo_conf.COMMENT_TENDENCY].find_one({"tag_comment_task_id": comment_task_id})
+    item = await mongo_db[mongo_conf.COMMENT_TENDENCY].find_one(
+        {"tag_comment_task_id": comment_task_id}
+    )
     if item:
         item.pop("_id")
     else:
@@ -70,7 +79,9 @@ async def getByCloudId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
     :param mongo_db:
     :return:
     """
-    item = await mongo_db[mongo_conf.COMMENT_CLOUD].find_one({"tag_comment_task_id": comment_task_id})
+    item = await mongo_db[mongo_conf.COMMENT_CLOUD].find_one(
+        {"tag_comment_task_id": comment_task_id}
+    )
     if item:
         item.pop("_id")
     return item
@@ -78,7 +89,9 @@ async def getByCloudId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
 
 def getByClusterId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
     # item = mydb['cluster'].find_one({"task_id": ObjectId(doc_id)})
-    item = mongo_db[mongo_conf.COMMENT_CLUSTER].find_one({"tag_comment_task_id": comment_task_id})
+    item = mongo_db[mongo_conf.COMMENT_CLUSTER].find_one(
+        {"tag_comment_task_id": comment_task_id}
+    )
     if item:
         item.pop("_id")
     print(item)
@@ -92,13 +105,17 @@ async def getTypeByClusterId(comment_task_id: str, mongo_db: AsyncIOMotorDatabas
     :param mongo_db:
     :return:
     """
-    item = await mongo_db[mongo_conf.COMMENT_CLUSTER].find_one({"tag_comment_task_id": comment_task_id})
+    item = await mongo_db[mongo_conf.COMMENT_CLUSTER].find_one(
+        {"tag_comment_task_id": comment_task_id}
+    )
     if item:
         item.pop("_id")
     result = []
-    for i in item['data']:
-        key_count = {'key': item['data'][i]['key'],
-                     'doc_count': len(item['data'][i]['id'])}
+    for i in item["data"]:
+        key_count = {
+            "key": item["data"][i]["key"],
+            "doc_count": len(item["data"][i]["id"]),
+        }
         result.append(key_count)
     return result
 
@@ -112,38 +129,55 @@ async def getTypeByClusterId(comment_task_id: str, mongo_db: AsyncIOMotorDatabas
 
 
 async def getKeyNode(comment_task_id: str, mongo_db: AsyncIOMotorDatabase):
-    item = await mongo_db[mongo_conf.COMMENT_NODE].find_one({"tag_comment_task_id": comment_task_id})
+    item = await mongo_db[mongo_conf.COMMENT_NODE].find_one(
+        {"tag_comment_task_id": comment_task_id}
+    )
     if item:
-        return item['data']
+        return item["data"]
 
 
 async def get_tree_data(comment_task_id: str, mongo_db: AsyncIOMotorDatabase):
     try:
-        data = await mongo_db[mongo_conf.COMMENT_TREE].find_one({'tag_comment_task_id': comment_task_id})
+        data = await mongo_db[mongo_conf.COMMENT_TREE].find_one(
+            {"tag_comment_task_id": comment_task_id}
+        )
         if data:
-            editJson(data['data'])
-            return {'tag_comment_task_id': data['tag_comment_task_id'], 'data': data['data']}
+            editJson(data["data"])
+            return {
+                "tag_comment_task_id": data["tag_comment_task_id"],
+                "data": data["data"],
+            }
     except Exception as e:
         return {"error": str(e)}
 
 
 async def deleteTask(tag_task_id, mongo_db: AsyncIOMotorDatabase):
-    result = mongo_db[mongo_conf.COMMENT_TASK].find({'tag_task_id': tag_task_id})
+    result = mongo_db[mongo_conf.COMMENT_TASK].find({"tag_task_id": tag_task_id})
     comment_task_id_list = list()
     celery_task_id_list = list()
     for i in await result.to_list(length=10):
-        comment_task_id_list.append(i['tag_comment_task_id'])
-        celery_task_id_list.append(i['celery_id'])
-    await mongo_db[mongo_conf.COMMENT_TASK].delete_many({'tag_task_id': tag_task_id})
-    for comment_task_id, celery_task_id in zip(comment_task_id_list, celery_task_id_list):
-        query = {'tag_comment_task_id': comment_task_id}
+        comment_task_id_list.append(i["tag_comment_task_id"])
+        celery_task_id_list.append(i["celery_id"])
+    await mongo_db[mongo_conf.COMMENT_TASK].delete_many({"tag_task_id": tag_task_id})
+    for comment_task_id, celery_task_id in zip(
+        comment_task_id_list, celery_task_id_list
+    ):
+        query = {"tag_comment_task_id": comment_task_id}
         await mongo_db[mongo_conf.COMMENT_CLOUD].delete_one(query)
         await mongo_db[mongo_conf.COMMENT_CLUSTER].delete_one(query)
         await mongo_db[mongo_conf.COMMENT_NODE].delete_one(query)
         await mongo_db[mongo_conf.COMMENT_REPOSTS].delete_many(query)
         await mongo_db[mongo_conf.COMMENT_TENDENCY].delete_one(query)
         await mongo_db[mongo_conf.COMMENT_TREE].delete_one(query)
-        celeryapp.control.revoke(celery_task_id, terminate=True, signal=signal.CTRL_C_EVENT)
+        # Linux不支持CTRL_C_EVENT，使用SIGTERM
+        import platform
+
+        if platform.system() == "Windows":
+            celeryapp.control.revoke(
+                celery_task_id, terminate=True, signal=signal.CTRL_C_EVENT
+            )
+        else:
+            celeryapp.control.revoke(celery_task_id, terminate=True, signal="SIGTERM")
 
 
 def editJson(item):
@@ -161,5 +195,5 @@ def editJson(item):
         editJson(i)
 
 
-if __name__ == '__main__':
-    deleteTask('2a135572805cd578edb880394348cbe6', get_mongo_db())
+if __name__ == "__main__":
+    deleteTask("2a135572805cd578edb880394348cbe6", get_mongo_db())

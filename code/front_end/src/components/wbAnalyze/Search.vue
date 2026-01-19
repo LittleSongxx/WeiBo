@@ -67,9 +67,6 @@ export default {
       });
     },
     add(){
-      this.$axios.get('add_task?tag=' + this.key_word).then((res) =>{
-        console.log(res)
-      });
       this.$confirm('此操作将分析该话题, 是否继续?', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',

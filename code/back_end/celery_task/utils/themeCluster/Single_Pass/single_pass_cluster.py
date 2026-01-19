@@ -12,17 +12,38 @@ from celery_task.config import mongo_conf
 from celery_task.utils import mongo_client
 
 
-class SinglePassCluster():
-    def __init__(self, blog_data: list, tag_task_id: str, user_list: list,stopWords_path="E:\study\lab\大二年度项目\yuqing_fastapi\src\dict\哈工大停用词表.txt", my_stopwords=None,
-                 max_df=0.5, max_features=1000,
-                 simi_threshold=0.5, res_save_path="./cluster_res.json"):
+class SinglePassCluster:
+    def __init__(
+        self,
+        blog_data: list,
+        tag_task_id: str,
+        user_list: list,
+        stopWords_path=None,
+        my_stopwords=None,
+        max_df=0.5,
+        max_features=1000,
+        simi_threshold=0.5,
+        res_save_path="./cluster_res.json",
+    ):
         self.origin_data_list = blog_data
         self.tag_task_id = tag_task_id
         self.user_list = user_list
+        # 如果没有提供路径，使用项目中的默认路径
+        if stopWords_path is None:
+            base_dir = os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    )
+                )
+            )
+            stopWords_path = os.path.join(base_dir, "dict", "哈工大停用词表.txt")
         self.stopwords = self.load_stopwords(stopWords_path)
         if isinstance(my_stopwords, list):
             self.stopwords += my_stopwords
-        self.tfidf = TfidfVectorizer(stop_words=self.stopwords, max_df=max_df, max_features=max_features)
+        self.tfidf = TfidfVectorizer(
+            stop_words=self.stopwords, max_df=max_df, max_features=max_features
+        )
         self.simi_thr = simi_threshold
         self.cluster_center_vec = []  # [cluster_center_vec, ]
         self.idx_2_text = {}  # {文本id: text, }
@@ -32,7 +53,7 @@ class SinglePassCluster():
 
     def load_stopwords(self, path):
         stopwords = []
-        with open(path, 'r', encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 stopwords.append(line.strip())
         return stopwords
@@ -40,7 +61,7 @@ class SinglePassCluster():
     def cut_sentences(self):
         texts = list()
         for data in self.origin_data_list:
-            texts.append(data['text'])
+            texts.append(data["text"])
         texts_cut = [" ".join(jieba.lcut(t)) for t in texts]
         self.idx_2_text = {idx: text for idx, text in enumerate(texts)}
         return texts_cut
@@ -76,40 +97,47 @@ class SinglePassCluster():
                     self.cluster_2_idx[len(self.cluster_2_idx)] = [idx]
         for key in self.cluster_2_idx.keys():
             index = self.cluster_2_idx[key]
-            cluster_text = [self.origin_data_list[i].get('text') for i in index]
-            user_id_list = [self.origin_data_list[i].get('user_id') for i in index]
+            cluster_text = [self.origin_data_list[i].get("text") for i in index]
+            user_id_list = [self.origin_data_list[i].get("user_id") for i in index]
             tags = MyCloud(cluster_text).GetWordCloud()
             hit = 0
             for user_index in range(len(self.user_list)):
-                if self.user_list[user_index].get('user_id') in user_id_list:
-                    self.user_list[user_index]['marks'] = tags[0:10] if len(tags) > 10 else tags
-                    self.user_list[user_index]['category'] = key
+                if self.user_list[user_index].get("user_id") in user_id_list:
+                    self.user_list[user_index]["marks"] = (
+                        tags[0:10] if len(tags) > 10 else tags
+                    )
+                    self.user_list[user_index]["category"] = key
                     hit += 1
                 if hit >= len(user_id_list):
                     break
-        update = {
-            'data': self.user_list,
-            'categories': len(self.cluster_2_idx)
-        }
-        mongo_client.db[mongo_conf.USER].update_one({'tag_task_id': self.tag_task_id}, {
-            '$set': update
-        })
+        update = {"data": self.user_list, "categories": len(self.cluster_2_idx)}
+        mongo_client.db[mongo_conf.USER].update_one(
+            {"tag_task_id": self.tag_task_id}, {"$set": update}
+        )
         return update
 
 
 if __name__ == "__main__":
     data = list()
-    blog_post = mongo_client.db[mongo_conf.BLOG].find_one({'tag_task_id': 'e6c3ff05a72f17a201e3ae2f36680288'}).get('data')
+    blog_post = (
+        mongo_client.db[mongo_conf.BLOG]
+        .find_one({"tag_task_id": "e6c3ff05a72f17a201e3ae2f36680288"})
+        .get("data")
+    )
     for blog in blog_post:
-        data.append(dict(
-            {
-                'user_id': blog['user_id'],
-                'text': blog['text']
-            }
-        ))
-    user_list = mongo_client.db[mongo_conf.USER].find_one({'tag_task_id': 'e6c3ff05a72f17a201e3ae2f36680288'}).get('data')
+        data.append(dict({"user_id": blog["user_id"], "text": blog["text"]}))
+    user_list = (
+        mongo_client.db[mongo_conf.USER]
+        .find_one({"tag_task_id": "e6c3ff05a72f17a201e3ae2f36680288"})
+        .get("data")
+    )
     blog_post = [dict(t) for t in set([tuple(blog.items()) for blog in data])]
     # blog_post.extend(Mongo('blog').collect.find_one({'tag_task_id': 'e792ed06589c0f44d13ad5877231687c'}).get('data'))
-    cluster = SinglePassCluster(max_features=100, blog_data=blog_post, user_list=user_list, tag_task_id='e6c3ff05a72f17a201e3ae2f36680288',
-                                simi_threshold=0.1)
+    cluster = SinglePassCluster(
+        max_features=100,
+        blog_data=blog_post,
+        user_list=user_list,
+        tag_task_id="e6c3ff05a72f17a201e3ae2f36680288",
+        simi_threshold=0.1,
+    )
     cluster.single_pass()

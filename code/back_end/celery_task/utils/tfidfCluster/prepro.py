@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*
-'''
+"""
 匹配content、comment并初步清理数据
 用于作词云wc.py、地图graph.py、Tf-idf文本聚类cluster_tfidf、Word2Vec文本聚类cluster_w2v
 将每个分类关键词形式变为：
@@ -8,10 +8,11 @@
   [url2, content2原文, [content2分词],[comment1],...,[comment_m]],
   ...
 ]
-'''
+"""
 
 import codecs
 import json
+import os
 import numpy
 import pandas as pd
 import jieba
@@ -21,12 +22,12 @@ from .langconv import *
 
 
 def Traditional2Simplified(sentence):
-    '''
+    """
     将sentence中的繁体字转为简体字
     :param sentence: 待转换的句子
     :return: 将句子中繁体字转换为简体字之后的句子
-    '''
-    sentence = Converter('zh-hans').convert(sentence)
+    """
+    sentence = Converter("zh-hans").convert(sentence)
     return sentence
 
 
@@ -72,50 +73,60 @@ def Match(comment, content):
         ]
     """
     content_comment = []
-    advertisement = ["王者荣耀", "券后", "售价", '¥', "￥", '下单', '转发微博', '转发', '微博']
+    advertisement = [
+        "王者荣耀",
+        "券后",
+        "售价",
+        "¥",
+        "￥",
+        "下单",
+        "转发微博",
+        "转发",
+        "微博",
+    ]
 
     for k in range(0, len(content)):
         judge = []
-        print('Processing train ', k)
-        content[k]['content'] = Traditional2Simplified(content[k]['content'])
+        print("Processing train ", k)
+        content[k]["content"] = Traditional2Simplified(content[k]["content"])
         for adv in advertisement:
-            if adv in content[k]['content']:
+            if adv in content[k]["content"]:
                 judge.append("True")
                 break
-        if re.search(r"买.*赠.*", content[k]['content']):
+        if re.search(r"买.*赠.*", content[k]["content"]):
             judge.append("True")
             continue
-        if content[k]['content'] == "":
+        if content[k]["content"] == "":
             judge.append("True")
             continue
         # 通过上面的两种模式判断是不是广告
         if "True" not in judge:
             comment_list = []
-            url = content[k]['task_id']
+            url = content[k]["task_id"]
             comment_list.append(url)
-            comment_list.append(content[k]['content'])
+            comment_list.append(content[k]["content"])
             # 数据清洗
-            a2 = re.compile(r'#.*?#')
-            content[k]['content'] = a2.sub('', content[k]['content'])
-            a3 = re.compile(r'\[组图共.*张\]')
-            content[k]['content'] = a3.sub('', content[k]['content'])
-            a4 = re.compile(r'http:.*')
-            content[k]['content'] = a4.sub('', content[k]['content'])
-            a5 = re.compile(r'@.*? ')
-            content[k]['content'] = a5.sub('', content[k]['content'])
-            a6 = re.compile(r'\[.*?\]')
-            content[k]['content'] = a6.sub('', content[k]['content'])
-            comment_list.append(Sent2Word(content[k]['content']))
+            a2 = re.compile(r"#.*?#")
+            content[k]["content"] = a2.sub("", content[k]["content"])
+            a3 = re.compile(r"\[组图共.*张\]")
+            content[k]["content"] = a3.sub("", content[k]["content"])
+            a4 = re.compile(r"http:.*")
+            content[k]["content"] = a4.sub("", content[k]["content"])
+            a5 = re.compile(r"@.*? ")
+            content[k]["content"] = a5.sub("", content[k]["content"])
+            a6 = re.compile(r"\[.*?\]")
+            content[k]["content"] = a6.sub("", content[k]["content"])
+            comment_list.append(Sent2Word(content[k]["content"]))
             for i in comment:
-                if i['weibo_url'] == url:  # 通过URL匹配content和comment
-                    a1 = re.compile(r'回复@.*:')
-                    i['content'] = a1.sub('', i['content'])
-                    i['content'] = Traditional2Simplified(i['content'])
-                    i['content'] = a2.sub('', i['content'])
-                    i['content'] = a4.sub('', i['content'])
-                    i['content'] = a5.sub('', i['content'])
-                    i['content'] = a6.sub('', i['content'])
-                    comment_list.append(Sent2Word(i['content']))
+                if i["weibo_url"] == url:  # 通过URL匹配content和comment
+                    a1 = re.compile(r"回复@.*:")
+                    i["content"] = a1.sub("", i["content"])
+                    i["content"] = Traditional2Simplified(i["content"])
+                    i["content"] = a2.sub("", i["content"])
+                    i["content"] = a4.sub("", i["content"])
+                    i["content"] = a5.sub("", i["content"])
+                    i["content"] = a6.sub("", i["content"])
+                    comment_list.append(Sent2Word(i["content"]))
             content_comment.append(comment_list)
     return content_comment
     with open("hhh.json", "w", encoding="utf8") as f:
@@ -126,14 +137,39 @@ def Match(comment, content):
 def preContent():
     print("停用词读取")
     global stop_words
-    stop_words = [w.strip() for w in open(r'E:\study\俱往矣\lab\last\大二年度项目\github\code\back_end\dict', 'r', encoding='UTF-8').readlines()]
-    stop_words.extend(['\n', '\t', ' ', '回复', '转发微博', '转发', '微博', '秒拍', '秒拍视频', '视频', "王者荣耀", "王者", "荣耀"])
+    # 使用项目中的停用词表路径
+    base_dir = os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+    )
+    stopwords_path = os.path.join(base_dir, "dict", "哈工大停用词表.txt")
+    stop_words = [
+        w.strip() for w in open(stopwords_path, "r", encoding="UTF-8").readlines()
+    ]
+    stop_words.extend(
+        [
+            "\n",
+            "\t",
+            " ",
+            "回复",
+            "转发微博",
+            "转发",
+            "微博",
+            "秒拍",
+            "秒拍视频",
+            "视频",
+            "王者荣耀",
+            "王者",
+            "荣耀",
+        ]
+    )
     for i in range(128000, 128722 + 1):
         stop_words.extend(chr(i))
-    stop_words.extend(['A股'])
+    stop_words.extend(["A股"])
 
     print("comment读取")
-    f = codecs.open('./Agu_comment.json', 'r', 'UTF-8-sig')
+    f = codecs.open("./Agu_comment.json", "r", "UTF-8-sig")
     comment = []
     for i in f.readlines():
         try:
@@ -144,15 +180,15 @@ def preContent():
     f.close()
     # print(comment)
 
-    '''
+    """
       comment_example:
       [
       {'_id': 'C_4322161898716112', 'crawl_time': '2019-06-01 20:35:36', 'weibo_url': 'https://weibo.com/1896820725/H9inNf22b', 'comment_user_id': '6044625121', 'content': '没问题，', 'like_num': {'$numberInt': '0'}, 'created_at': '2018-12-28 11:19:21'},...
       ]
-    '''
+    """
 
     print("content读取")
-    f = codecs.open('./Agu_content.json', 'r', 'UTF-8-sig')
+    f = codecs.open("./Agu_content.json", "r", "UTF-8-sig")
     content = []
     for i in f.readlines():
         try:
@@ -164,5 +200,5 @@ def preContent():
     return Match(comment, content)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

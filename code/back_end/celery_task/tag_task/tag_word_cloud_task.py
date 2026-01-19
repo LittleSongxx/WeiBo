@@ -18,16 +18,19 @@ def word_cloud(weibo: dict, tag_task_id: str):
     """
     # 读取博文数据
     weibo_list = list()
-    for weibo_item in weibo['data']:
-        weibo_list.append(weibo_item['text'])
+    # 检查data字段是否存在
+    if "data" in weibo and isinstance(weibo["data"], list):
+        for weibo_item in weibo["data"]:
+            if "text" in weibo_item:
+                weibo_list.append(weibo_item["text"])
 
     # 词云构建
     my_cloud = MyCloud(weibo_list)
     word_cloud_list = my_cloud.GetWordCloud()
     if len(word_cloud_list) > 200:
-        word_cloud_list = word_cloud_list[0: 200]
+        word_cloud_list = word_cloud_list[0:200]
 
     # 存储词云
-    query_by_task_id = {'tag_task_id': tag_task_id}
-    update_data = {"$set": {'data': word_cloud_list}}
+    query_by_task_id = {"tag_task_id": tag_task_id}
+    update_data = {"$set": {"data": word_cloud_list}}
     mongo_client.db[mongo_conf.CLOUD].update_one(query_by_task_id, update_data)

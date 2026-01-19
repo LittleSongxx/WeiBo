@@ -15,7 +15,7 @@ celeryapp = Celery(
     __name__,
     broker=f"redis://{redis_host}:{redis_port}/0",
     backend=f"redis://{redis_host}:{redis_port}/1",
-    result_serializer=True,
+    result_serializer="json",
 )
 celeryapp.autodiscover_tasks(
     [

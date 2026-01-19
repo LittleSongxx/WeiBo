@@ -1,9 +1,12 @@
 {
   "cookies": [
-    "your cookies"
+    "SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9WFn4RTK.8QWBOWxJELmM_iW5NHD95QNe0-NSKeXShe4Ws4DqcjeKsLXUspLMcvV9NyR; _T_WM=42766d4ad33015d04df6acdee3bf5ff0; SCF=AnQlhIQDmDsnR2XPm8qZhoPobZ_rxrJTT4iFZaVrwkhqYQJ-Sl2Yqt4pc8x_pRWwtO-vCz8Q4a_oDCSrqoVlstE.; SUB=_2A25EbzEjDeRhGeFN7lUU8yrIyDWIHXVnBczrrDV6PUJbktANLVbCkW1NQBOyvYMcOBCEXwg651hyLyAyqTTKe3Z9; ALF=1771228787"
   ],
   "proxies": [
-    ["182.34.33.70", 9999]
+    [
+      "",
+      0
+    ]
   ],
   "test": ""
 }
