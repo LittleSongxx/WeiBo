@@ -39,9 +39,12 @@ def tag_relation(weibo_data: dict, tag_task_id: str, user_mark_data: dict):
         hot_count = 0
         for weibo in weibo_list:
             if weibo.get("screen_name") == screen_name:
-                at_users_list.extend(weibo.get("at_users"))
-                hot_count += int(weibo.get("hot_count"))
-                user_id = weibo["user_id"]
+                # 使用默认空列表避免NoneType错误
+                at_users = weibo.get("at_users", [])
+                if at_users:
+                    at_users_list.extend(at_users)
+                hot_count += int(weibo.get("hot_count", 0))
+                user_id = weibo.get("user_id", 0)
         relation_data.append(
             {
                 "screen_name": screen_name,
@@ -52,10 +55,13 @@ def tag_relation(weibo_data: dict, tag_task_id: str, user_mark_data: dict):
         )
     for data in relation_data:
         category = -1
-        for user_mark in user_mark_data.get("data"):
-            if user_mark.get("user_id") == data["user_id"]:
-                category = user_mark.get("category")
-                break
+        # 检查user_mark_data和data字段是否存在
+        user_mark_list = user_mark_data.get("data", []) if user_mark_data else []
+        if isinstance(user_mark_list, list):
+            for user_mark in user_mark_list:
+                if user_mark and user_mark.get("user_id") == data.get("user_id"):
+                    category = user_mark.get("category", -1)
+                    break
         node = {
             "category": category,
             "name": data["screen_name"],
@@ -63,28 +69,33 @@ def tag_relation(weibo_data: dict, tag_task_id: str, user_mark_data: dict):
             "value": int(data["hot_count"]),
         }
         node_list.append(node)
-        for i in data["at_users"]:
-            link = {
-                "source": data["screen_name"],
-                "target": i,
-                "weight": data["at_users"].count(i),
-            }
-            if link not in link_list:
-                link_list.append(link)
-            if i not in screen_name_set:
-                node = {
-                    "category": -1,
-                    "name": i,
-                    "userId": None,
-                    "value": int(data["hot_count"]),
+        # 检查at_users是否存在且不为空
+        at_users = data.get("at_users", [])
+        if isinstance(at_users, list) and len(at_users) > 0:
+            for i in at_users:
+                if not i or not isinstance(i, str):
+                    continue
+                link = {
+                    "source": data["screen_name"],
+                    "target": i,
+                    "weight": at_users.count(i),
                 }
-                node_list.append(node)
-                screen_name_set.add(i)
-            else:
-                for node_item in node_list:
-                    if node_item["name"] == i:
-                        node_item["value"] += int(data["hot_count"])
-                        break
+                if link not in link_list:
+                    link_list.append(link)
+                if i not in screen_name_set:
+                    node = {
+                        "category": -1,
+                        "name": i,
+                        "userId": None,
+                        "value": int(data["hot_count"]),
+                    }
+                    node_list.append(node)
+                    screen_name_set.add(i)
+                else:
+                    for node_item in node_list:
+                        if node_item["name"] == i:
+                            node_item["value"] += int(data["hot_count"])
+                            break
     query_by_task_id = {"tag_task_id": tag_task_id}
     update = {
         "$set": {

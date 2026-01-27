@@ -20,10 +20,8 @@ celeryapp = Celery(
 celeryapp.autodiscover_tasks(
     [
         "celery_task.task",
-        "celery_task.tag_comment_task.task.task_schedule",
+        "celery_task.tag_comment_task.task",  # 自动发现该模块下的所有任务
         "celery_task.worker",
-        "celery_task.worker.task_schedule",
-        "celery_task.worker.start_comment_task",
     ]
 )
 celeryapp.conf.update(

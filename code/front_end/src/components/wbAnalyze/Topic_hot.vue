@@ -41,22 +41,79 @@ export default {
   methods: {
     getTopicData(id) {
       this.$axios.get("/hot?tag_task_id="+id).then((res) => {
-        this.one_day_count = res.data.data.one_day.data_count;
-        let time = res.data.data.one_day.data_time;
-        this.one_day_daytime = time[0].split("T")[0];
-        for (let index in time) {
-          this.one_day_hourtime[index] = time[index].split("T")[1];
+        // 检查响应数据是否存在
+        if (!res.data || !res.data.data) {
+          console.error("获取热度数据失败: 响应数据为空");
+          this.$message({
+            message: "获取热度数据失败，请稍后重试",
+            type: "warning"
+          });
+          return;
         }
-        this.one_month_count = res.data.data.one_month.data_count;
-        time = res.data.data.one_month.data_time;
-        for (let index in time) {
-          this.one_month_time[index] = time[index].split("T")[0];
+        
+        const data = res.data.data;
+        
+        // 处理一天的数据
+        if (data.one_day && data.one_day.data_count && data.one_day.data_time) {
+          this.one_day_count = data.one_day.data_count;
+          let time = data.one_day.data_time;
+          if (time.length > 0) {
+            this.one_day_daytime = time[0].split("T")[0];
+            this.one_day_hourtime = [];
+            for (let index in time) {
+              if (time[index] && time[index].split("T").length > 1) {
+                this.one_day_hourtime[index] = time[index].split("T")[1];
+              }
+            }
+          } else {
+            this.one_day_hourtime = [];
+            this.one_day_count = [];
+          }
+        } else {
+          this.one_day_hourtime = [];
+          this.one_day_count = [];
         }
-        this.three_month_count = res.data.data.three_month.data_count;
-        time = res.data.data.three_month.data_time;
-        for (let index in time) {
-          this.three_month_time[index] = time[index].split("T")[0];
+        
+        // 处理一个月的数据
+        if (data.one_month && data.one_month.data_count && data.one_month.data_time) {
+          this.one_month_count = data.one_month.data_count;
+          let time = data.one_month.data_time;
+          this.one_month_time = [];
+          for (let index in time) {
+            if (time[index]) {
+              this.one_month_time[index] = time[index].split("T")[0];
+            }
+          }
+        } else {
+          this.one_month_time = [];
+          this.one_month_count = [];
         }
+        
+        // 处理三个月的数据
+        if (data.three_month && data.three_month.data_count && data.three_month.data_time) {
+          this.three_month_count = data.three_month.data_count;
+          let time = data.three_month.data_time;
+          this.three_month_time = [];
+          for (let index in time) {
+            if (time[index]) {
+              this.three_month_time[index] = time[index].split("T")[0];
+            }
+          }
+        } else {
+          this.three_month_time = [];
+          this.three_month_count = [];
+        }
+        
+        // 如果有数据，更新图表
+        if (this.one_day_count.length > 0) {
+          this.myLineChart(this.one_day_hourtime, this.one_day_count);
+        }
+      }).catch((error) => {
+        console.error("获取热度数据失败:", error);
+        this.$message({
+          message: "获取热度数据失败，请稍后重试",
+          type: "error"
+        });
       });
     },
     myLineChart(time, count) {
@@ -99,11 +156,17 @@ export default {
     },
     changeline(line) {
       if (line == 1) {
-        this.myLineChart(this.one_day_hourtime, this.one_day_count);
+        if (this.one_day_hourtime.length > 0 && this.one_day_count.length > 0) {
+          this.myLineChart(this.one_day_hourtime, this.one_day_count);
+        }
       } else if (line == 2) {
-        this.myLineChart(this.one_month_time, this.one_month_count);
+        if (this.one_month_time.length > 0 && this.one_month_count.length > 0) {
+          this.myLineChart(this.one_month_time, this.one_month_count);
+        }
       } else {
-        this.myLineChart(this.three_month_time, this.three_month_count);
+        if (this.three_month_time.length > 0 && this.three_month_count.length > 0) {
+          this.myLineChart(this.three_month_time, this.three_month_count);
+        }
       }
     },
   },

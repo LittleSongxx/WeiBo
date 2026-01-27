@@ -8,6 +8,8 @@ import re
 import datetime
 import random
 import logging
+import sys
+import os
 from lxml import etree
 from celery_task import celeryapp
 import time
@@ -15,16 +17,101 @@ import time
 from celery_task.config import mongo_conf
 from celery_task.utils import mongo_client
 
-logger = logging.getLogger()
+# 添加配置模块路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+try:
+    from config import get_mobile_cookies, get_user_agent, get_delay_range, get_repost_max_pages, get_page_size
+    USE_UNIFIED_CONFIG = True
+except ImportError:
+    USE_UNIFIED_CONFIG = False
 
-PAGE_SIZE = 100
+logger = logging.getLogger()
 
 BASE_DOMAIN = "https://weibo.cn"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.92 Safari/537.36",
-    "Cookie": "SCF=ArHSivJ7DBzxAALySACWrOzWulmqj_Zr5aggjL8afVQ6Pv6H5lPXm0_tiSktPqlqBSw2OfeX6twDrveJcbYNzs8.; SUB=_2A25Me5PlDeRhGeNJ61AY9irNyjSIHXVvhz2trDV6PUJbktAKLVfgkW1NSBz5nlaR7-8he36k3F4M3RxKcvLIEQUn; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9W5zGJz1gR-_JrXo1iQ6.RlL5NHD95QfS05E1KqXeK2RWs4Dqcjgi--ciK.4i-iWi--4iKLFi-zcCcLV97tt; SSOLoginState=1635771317; _T_WM=86561739983; WEIBOCN_FROM=1110006030; MLOGIN=1; XSRF-TOKEN=c6f982; M_WEIBOCN_PARAMS=oid=4698660040084390&luicode=20000174&uicode=20000174",
-}
+
+def _get_mobile_cookie():
+    """
+    从统一配置文件或 account.json 动态读取移动端 Cookie
+    """
+    # 优先使用统一配置
+    if USE_UNIFIED_CONFIG:
+        try:
+            cookies = get_mobile_cookies()
+            if cookies and len(cookies) > 0:
+                logger.info("成功从统一配置文件加载 Cookie")
+                return cookies[0]
+        except Exception as e:
+            logger.warning(f"从统一配置加载 Cookie 失败: {e}")
+    
+    # 回退到 account.json
+    import json
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), '..', '..', '..', 'weibo_crawler', 'account', 'account.json'),
+        '/home/song/code/graduation/Topic_and_user_profile_analysis_system/code/weibo_crawler/account/account.json',
+        'account/account.json',
+        '../weibo_crawler/account/account.json',
+    ]
+    
+    for path in possible_paths:
+        try:
+            abs_path = os.path.abspath(path)
+            if os.path.exists(abs_path):
+                with open(abs_path, 'r', encoding='utf-8') as f:
+                    account_data = json.load(f)
+                    cookies = account_data.get('cookies_mobile', account_data.get('cookies', []))
+                    if cookies and len(cookies) > 0:
+                        logger.info(f"成功从 {abs_path} 加载 Cookie")
+                        return cookies[0]
+        except Exception as e:
+            logger.warning(f"从 {path} 加载 Cookie 失败: {e}")
+            continue
+    
+    logger.error("无法加载 Cookie，所有路径都失败了")
+    return ""
+
+
+def _get_user_agent():
+    """获取 User-Agent"""
+    if USE_UNIFIED_CONFIG:
+        try:
+            return get_user_agent()
+        except:
+            pass
+    return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def _get_headers():
+    """获取带有最新 Cookie 的请求头"""
+    return {
+        "User-Agent": _get_user_agent(),
+        "Cookie": _get_mobile_cookie(),
+    }
+
+
+def _get_delay():
+    """获取请求延迟范围"""
+    if USE_UNIFIED_CONFIG:
+        try:
+            return get_delay_range()
+        except:
+            pass
+    return (1, 10)
+
+
+def _get_max_pages():
+    """获取最大爬取页数"""
+    if USE_UNIFIED_CONFIG:
+        try:
+            return get_repost_max_pages()
+        except:
+            pass
+    return 300
+
+
+# 保持向后兼容
+HEADERS = _get_headers()
+PAGE_SIZE = get_page_size() if USE_UNIFIED_CONFIG else 100
 
 keyword_re = re.compile(
     '<span class="kt">|</span>|原图|<!-- 是否进行翻译 -->|<span class="cmt">|\[组图共.+张\]'
@@ -85,9 +172,11 @@ def name2uid(name_url):
 
     uid_re = re.compile("uid=(\d+)")
     time.sleep(1)
+    # 动态获取最新的 Cookie
+    current_headers = _get_headers()
     response = requests.get(
         "{domain}{name_url}".format(domain=BASE_DOMAIN, name_url=name_url),
-        headers=HEADERS,
+        headers=current_headers,
     )
     uid = re.findall(uid_re, response.url)[0]
     if uid:
@@ -133,23 +222,34 @@ def spider(tag_task_id: str, weibo_id="K7okwxcKa", page=93, tag_comment_task_id=
     :param task_id: 任务id
     :return:
     """
-    response = requests.get(
-        "{domain}/repost/{weibo_id}?page={page}".format(
-            domain=BASE_DOMAIN, weibo_id=weibo_id, page=page
-        ),
-        headers=HEADERS,
-    )
-    # response = requests.get(
-    #     "{domain}/repost/{weibo_id}?page={page}".format(domain=BASE_DOMAIN, weibo_id=weibo_id, page=page),
-    #     headers=HEADERS)
-    # 检查response.text是否为None，避免TypeError
-    if not response.text:
+    # 每次请求时动态获取最新的 Cookie
+    current_headers = _get_headers()
+    try:
+        response = requests.get(
+            "{domain}/repost/{weibo_id}?page={page}".format(
+                domain=BASE_DOMAIN, weibo_id=weibo_id, page=page
+            ),
+            headers=current_headers,
+            timeout=30,
+        )
+    except Exception as e:
+        logger.warning(f"Request failed for weibo_id {weibo_id} page {page}: {e}")
+        return []
+
+    # 检查response.text是否为None或空，避免TypeError
+    if response.text is None or not response.text.strip():
         logger.warning(f"Empty response for weibo_id {weibo_id} page {page}")
         return []
-    tree_node = etree.HTML(response.text.encode("utf-8"))
+
+    try:
+        tree_node = etree.HTML(response.text)
+    except Exception as e:
+        logger.warning(f"HTML parsing failed for weibo_id {weibo_id} page {page}: {e}")
+        return []
+
     # 检查tree_node是否为None，避免AttributeError
     if tree_node is None:
-        logger.warning(f"HTML parsing failed for weibo_id {weibo_id} page {page}")
+        logger.warning(f"HTML parsing returned None for weibo_id {weibo_id} page {page}")
         return []
     repo_nodes = tree_node.xpath('//div[@class="c" and not(contains(@id,"M_"))]')
     repost_items = []
@@ -215,11 +315,13 @@ def spider(tag_task_id: str, weibo_id="K7okwxcKa", page=93, tag_comment_task_id=
 # todo 从当前节点开始而不是从根节点开始；若从根节点开始可能有重复爬取与分析的可能
 @celeryapp.task(bind=True)
 def spider_list(self, tag_task_id: str, weibo_id="K7okwxcKa", tag_comment_task_id=9999):
+    # 动态获取最新的 Cookie
+    current_headers = _get_headers()
     response = requests.get(
         "{domain}/repost/{weibo_id}?page=1".format(
             domain=BASE_DOMAIN, weibo_id=weibo_id
         ),
-        headers=HEADERS,
+        headers=current_headers,
     )
     # 检查response.text是否为None
     if not response.text:
@@ -276,11 +378,13 @@ def spider_list(self, tag_task_id: str, weibo_id="K7okwxcKa", tag_comment_task_i
 
 def spider_list_part(tag_task_id: str, weibo_id="K7okwxcKa", tag_comment_task_id=9999):
     print(weibo_id)
+    # 动态获取最新的 Cookie
+    current_headers = _get_headers()
     response = requests.get(
         "{domain}/repost/{weibo_id}?page=1".format(
             domain=BASE_DOMAIN, weibo_id=weibo_id
         ),
-        headers=HEADERS,
+        headers=current_headers,
     )
     # 检查response.text是否为None
     if not response.text:

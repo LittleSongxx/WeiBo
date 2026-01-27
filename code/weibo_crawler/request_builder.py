@@ -1,8 +1,9 @@
 import settings
 from tornado.httpclient import HTTPRequest
 import enum
+from account.account import fetch_by_url
 from urllib.parse import quote
-from account.account import account_pool
+from utils import ensure_base62_id
 
 
 class BaseRequestBuilder:
@@ -14,25 +15,36 @@ class BaseRequestBuilder:
     def get_url(self):
         return self.url
 
-    def make_request(self, method="GET", with_cookie=True, **req_kwargs):
-        cookie, proxy = account_pool.fetch()
-        proxy_host, proxy_port = proxy[0], proxy[1]
+    def make_request(self, method='GET', with_cookie=True, **req_kwargs):
+        cookie, proxy = fetch_by_url(self.get_url())
+        proxy_host, proxy_port = (proxy[0], proxy[1]) if proxy else (None, None)
 
         if with_cookie:
-            headers = settings.HEADERS_WITH_COOKIR
-            headers["Cookie"] = cookie
+            # 避免复用同一个 dict 导致 Cookie 串在并发/多请求间被污染
+            headers = settings.HEADERS_WITH_COOKIR.copy()
+            headers['Cookie'] = cookie
         else:
-            headers = settings.HEADERS
+            headers = settings.HEADERS.copy()
 
-        # print(proxy_host, proxy_port)
+        # 注意：weibo.cn 在部分网络环境下会 403/432，需要启用代理
+        # Tornado 的 HTTPRequest 支持 proxy_host/proxy_port 走 HTTP 代理（同时适用于 https 目标）
+        req_kwargs2 = dict(req_kwargs)
+        if getattr(settings, "USE_PROXY", False) and proxy_host and proxy_port:
+            req_kwargs2.update(
+                {
+                    "proxy_host": proxy_host,
+                    "proxy_port": int(proxy_port),
+                    "connect_timeout": settings.REQUEST_TIME_OUT,
+                    "validate_cert": False,
+                }
+            )
+
         req = HTTPRequest(
             url=self.get_url(),
             method=method,
-            # proxy_host=proxy_host, proxy_port=proxy_port,
-            # connect_timeout=300, validate_cert=False,
             headers=headers,
             request_timeout=settings.REQUEST_TIME_OUT,
-            **req_kwargs,
+            **req_kwargs2,
         )
         return req
 
@@ -40,9 +52,9 @@ class BaseRequestBuilder:
 class UserIndexReqBuilder(BaseRequestBuilder):
     """根据用户id构造出用户的主页URL"""
 
-    def __init__(self, user_id="1669879400"):
+    def __init__(self, user_id='1669879400'):
         super().__init__()
-        self.url = "https://weibo.cn/{}".format(user_id)
+        self.url = 'https://weibo.cn/{}'.format(user_id)
 
 
 class UserInfoReqBuilder(BaseRequestBuilder):
@@ -50,7 +62,7 @@ class UserInfoReqBuilder(BaseRequestBuilder):
 
     def __init__(self, user_id):
         super().__init__()
-        self.url = "https://weibo.cn/{}/info".format(user_id)
+        self.url = 'https://weibo.cn/{}/info'.format(user_id)
 
 
 class UserWeiboPageReqBuilder(BaseRequestBuilder):
@@ -58,7 +70,7 @@ class UserWeiboPageReqBuilder(BaseRequestBuilder):
 
     def __init__(self, user_id, page_num=1):
         super().__init__()
-        self.url = "https://weibo.cn/{}?page={}".format(user_id, page_num)
+        self.url = 'https://weibo.cn/{}?page={}'.format(user_id, page_num)
 
 
 class WeiboCommentReqBuilder(BaseRequestBuilder):
@@ -66,7 +78,10 @@ class WeiboCommentReqBuilder(BaseRequestBuilder):
 
     def __init__(self, weibo_id, page_num=1):
         super().__init__()
-        self.url = "https://weibo.cn/comment/{}?page={}".format(weibo_id, page_num)
+        # 将数字格式的mid转换为base62格式的id
+        weibo_id = ensure_base62_id(weibo_id)
+        self.url = 'https://weibo.cn/comment/{}?page={}'.format(
+            weibo_id, page_num)
 
 
 class HotCommentReqBuilder(BaseRequestBuilder):
@@ -74,7 +89,10 @@ class HotCommentReqBuilder(BaseRequestBuilder):
 
     def __init__(self, weibo_id, page_num=1):
         super().__init__()
-        self.url = "https://weibo.cn/comment/hot/{}?page={}".format(weibo_id, page_num)
+        # 将数字格式的mid转换为base62格式的id
+        weibo_id = ensure_base62_id(weibo_id)
+        self.url = 'https://weibo.cn/comment/hot/{}?page={}'.format(
+            weibo_id, page_num)
 
 
 class MblogPicAllReqBuilder(BaseRequestBuilder):
@@ -82,7 +100,9 @@ class MblogPicAllReqBuilder(BaseRequestBuilder):
 
     def __init__(self, weibo_id):
         super().__init__()
-        self.url = "https://weibo.cn/mblog/picAll/" + weibo_id + "?rl=1"
+        # 将数字格式的mid转换为base62格式的id
+        weibo_id = ensure_base62_id(weibo_id)
+        self.url = 'https://weibo.cn/mblog/picAll/' + weibo_id + '?rl=1'
 
 
 class FollowsReqBuilder(BaseRequestBuilder):
@@ -90,7 +110,8 @@ class FollowsReqBuilder(BaseRequestBuilder):
 
     def __init__(self, user_id, page_num):
         super().__init__()
-        self.url = "https://weibo.cn/{}/follow?page={}".format(user_id, page_num)
+        self.url = 'https://weibo.cn/{}/follow?page={}'.format(
+            user_id, page_num)
 
 
 class FansReqBuilder(BaseRequestBuilder):
@@ -98,7 +119,7 @@ class FansReqBuilder(BaseRequestBuilder):
 
     def __init__(self, user_id, page_num):
         super().__init__()
-        self.url = "https://weibo.cn/{}/fans?page={}".format(user_id, page_num)
+        self.url = 'https://weibo.cn/{}/fans?page={}'.format(user_id, page_num)
 
 
 class SearchWeiboReqBuilder(BaseRequestBuilder):
@@ -106,18 +127,19 @@ class SearchWeiboReqBuilder(BaseRequestBuilder):
 
     def __init__(self, keyword, page_num, is_hot):
         super().__init__()
-        # 使用weibo.cn手机版网页（不是API，是传统HTML页面）
-        # 这个页面有服务端渲染的HTML内容，可以用XPath解析
-        self.url = f"https://weibo.cn/search/mblog?hideSearchFrame=&keyword={quote(keyword)}&page={page_num}"
+        # pycurl 对 URL 只接受 ASCII；中文关键词必须做百分号编码
+        keyword_enc = quote(str(keyword), safe="")
+        search_type = r"xsort=hot&suball=1&Refer=g" if is_hot else r"typeall=1&suball=1"
+        self.url = 'https://s.weibo.com/weibo?{}&page={}&q={}'.format(
+            search_type, page_num, keyword_enc)
 
 
 class UserType(enum.Enum):
     """搜索用户时的用户类型限制"""
-
-    NO_LIMIT = ""  # 无限制
-    ORG_VIP = "&auth=org_vip"  # 机构认证
-    PER_VIP = "&auth=per_vip"  # 个人认证
-    ORDINARY = "&auth=ord"  # 普通用户
+    NO_LIMIT = ''  # 无限制
+    ORG_VIP = '&auth=org_vip'  # 机构认证
+    PER_VIP = '&auth=per_vip'  # 个人认证
+    ORDINARY = '&auth=ord'  # 普通用户
 
     @staticmethod
     def arg_convert(arg):
@@ -125,33 +147,33 @@ class UserType(enum.Enum):
             None: UserType.NO_LIMIT,
             1: UserType.ORG_VIP,
             2: UserType.PER_VIP,
-            3: UserType.ORDINARY,
+            3: UserType.ORDINARY
         }.get(arg, UserType.NO_LIMIT)
 
 
 class Gender(enum.Enum):
     """搜索用户时的性别限制"""
-
-    NO_LIMIT = ""
-    MAN = "&gender=man"
-    WOMAN = "&gender=woman"
+    NO_LIMIT = ''
+    MAN = '&gender=man'
+    WOMAN = '&gender=woman'
 
     @staticmethod
     def arg_convert(arg):
-        return {None: Gender.NO_LIMIT, 1: Gender.MAN, 2: Gender.WOMAN}.get(
-            arg, Gender.NO_LIMIT
-        )
+        return {
+            None: Gender.NO_LIMIT,
+            1: Gender.MAN,
+            2: Gender.WOMAN
+        }.get(arg, Gender.NO_LIMIT)
 
 
 class AgeLimit(enum.Enum):
     """枚举搜索用户时的年龄限制"""
-
-    NO_LIMIT = ""  # 不限年龄
-    BELOW_18 = "&age=18y"  # 18岁以下
-    FROM_19_TO_22 = "&age=22y"  # 19-22岁
-    FROM_23_TO_29 = "&age=29y"  # 23-29岁
-    FROM_30_TO_39 = "&age=39y"  # 30-39岁
-    OVER_40 = "&age=40y"  # 高于40岁
+    NO_LIMIT = ''  # 不限年龄
+    BELOW_18 = '&age=18y'  # 18岁以下
+    FROM_19_TO_22 = '&age=22y'  # 19-22岁
+    FROM_23_TO_29 = '&age=29y'  # 23-29岁
+    FROM_30_TO_39 = '&age=39y'  # 30-39岁
+    OVER_40 = '&age=40y'  # 高于40岁
 
     @staticmethod
     def arg_convert(arg):
@@ -160,7 +182,7 @@ class AgeLimit(enum.Enum):
             1: AgeLimit.BELOW_18,
             2: AgeLimit.FROM_19_TO_22,
             3: AgeLimit.FROM_30_TO_39,
-            4: AgeLimit.OVER_40,
+            4: AgeLimit.OVER_40
         }.get(arg, AgeLimit.NO_LIMIT)
 
 
@@ -181,22 +203,22 @@ class SearchUsersReqBuilder(BaseRequestBuilder):
         gender = Gender.arg_convert(gender)
         age_limit = AgeLimit.arg_convert(age_limit)
         # 再将这些枚举类型转化成url的查询字符串
-        query_str = "".join((user_type.value, gender.value, age_limit.value))
+        query_str = ''.join((user_type.value, gender.value, age_limit.value))
+        keyword_enc = quote(str(keyword), safe="")
 
-        self.url = "https://s.weibo.com/user?q={}&Refer=weibo_user{}&page={}".format(
-            keyword, query_str, page_num
-        )
+        self.url = 'https://s.weibo.com/user?q={}&Refer=weibo_user{}&page={}'.format(
+            keyword_enc, query_str, page_num)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     from tornado import httpclient
 
     def f():
         http_client = httpclient.HTTPClient()
         try:
-            req = UserIndexReqBuilder("1669879400").make_request()
+            req = UserIndexReqBuilder('1669879400').make_request()
             response = http_client.fetch(req)
-            print(response.body.decode("utf8"))
+            print(response.body.decode('utf8'))
         except Exception as e:
             print(e)
 

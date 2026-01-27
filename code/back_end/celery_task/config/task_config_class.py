@@ -33,7 +33,7 @@ class MongoConfig(BaseSettings):
 
     HOST: str = os.getenv("MONGO_HOST", "127.0.0.1")
     PORT: int = int(os.getenv("MONGO_PORT", "27017"))
-    DB_NAME: str = "test"
+    DB_NAME: str = "public_opinion_analysis_system"
 
     # 话题任务数据库名称
     TASK: str = "tag_task"
@@ -46,6 +46,7 @@ class MongoConfig(BaseSettings):
     RETWEET: str = "tag_weibo_task"
     CLOUD: str = "tag_word_cloud"
     USER: str = "tag_user"
+    WEIBO: str = "weibo"  # 微博数据collection
 
     # 评论任务数据库名称
     COMMENT_TASK = "comment_task"

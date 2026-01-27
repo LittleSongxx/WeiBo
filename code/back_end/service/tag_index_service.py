@@ -22,7 +22,7 @@ async def get_tag_task_list(mongo_db: AsyncIOMotorDatabase) -> list:
             tag_base = await mongo_db["tag_introduce"].find_one(
                 {"tag_task_id": tag["tag_task_id"]}
             )
-            if tag_base:
+            if tag_base and "vital_user" in tag_base:
                 user = User(
                     **tag_base["vital_user"]
                     # user_id=tag_base['vital_user']['user_id'],
@@ -84,12 +84,25 @@ async def get_relation_graph(tag_task_id: str, mongo_db: AsyncIOMotorDatabase) -
     )
     if relation_graph_result:
         relation_graph_result.pop("_id")
+        # 确保返回的数据包含必要的字段
+        if "nodes_list" not in relation_graph_result:
+            relation_graph_result["nodes_list"] = []
+        if "links_list" not in relation_graph_result:
+            relation_graph_result["links_list"] = []
+        
         # 检查nodes_list是否存在，避免KeyError
-        if "nodes_list" in relation_graph_result:
+        if "nodes_list" in relation_graph_result and isinstance(relation_graph_result["nodes_list"], list):
             for node in relation_graph_result["nodes_list"]:
-                if "category" in node.keys():
+                if isinstance(node, dict) and "category" in node.keys():
                     node.pop("category")
-    return relation_graph_result if relation_graph_result else {}
+    # 如果结果为空，返回包含空数组的字典，而不是空字典
+    if not relation_graph_result:
+        relation_graph_result = {
+            "tag_task_id": tag_task_id,
+            "nodes_list": [],
+            "links_list": []
+        }
+    return relation_graph_result
 
 
 async def get_user_mark(tag_task_id: str, mongo_db: AsyncIOMotorDatabase) -> dict:

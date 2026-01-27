@@ -3,26 +3,26 @@ from tornado import web, gen, httpserver
 import tornado.options
 from tornado.options import define, options
 import json
+import sys
+import os
+
+# 添加配置模块路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from selector_parser import *
 import settings
 from web_curl import SpiderAim, weibo_web_curl, curl_result_to_api_result
-from weibo_curl_error import WeiboCurlError, CookieInvalidException, HTMLParseException
-from account.account import account_pool
+from weibo_curl_error import WeiboCurlError, CookieInvalidException, HTMLParseException, PageContentEmptyException
+from account.account import account_pool_mobile, update_pools
 from utils import report_log
 import pymongo
 
-# 导入Playwright搜索模块
+# 尝试从统一配置加载搜索最大页数
 try:
-    from playwright_search import sync_search_weibo
-
-    PLAYWRIGHT_AVAILABLE = True
+    from config import get_search_max_pages
+    SEARCH_LIMIT_PAGES = get_search_max_pages()
 except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-    print("警告: Playwright未安装，搜索功能将使用传统方式（可能失败）")
-
-
-SEARCH_LIMIT_PAGES = 50  # 微博的搜索接口限制的最大页数
+    SEARCH_LIMIT_PAGES = 50  # 微博的搜索接口限制的最大页数
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -70,108 +70,69 @@ class SearchTweetsHandler(BaseHandler):
 
     @gen.coroutine
     def get(self):
-        # 获取参数
-        args_dict = self.args2dict()  # 查询参数 -> 参数字典
-        keyword, cursor, is_hot = (
-            args_dict.get("keyword"),
-            args_dict.get("cursor", "1"),
-            args_dict.get("is_hot", False),
-        )
-        if keyword is None:
-            self.write(WeiboCurlError.REQUEST_LACK_ARGS)  # 缺少参数
-            return
+        # 最外层兜底：避免未捕获异常导致 Tornado 返回 500 HTML/空响应，从而让上游 json.loads 直接崩
         try:
-            cursor = 1 if not cursor else int(cursor)
-        except ValueError:
-            self.write(WeiboCurlError.REQUEST_ARGS_ERROR)
-            return
+            # 获取参数
+            args_dict = self.args2dict()  # 查询参数 -> 参数字典
+            keyword = args_dict.get("keyword")
+            cursor = args_dict.get("cursor", "1")
+            is_hot = args_dict.get("is_hot", False)
 
-        # 使用Playwright进行搜索（如果可用）
-        if PLAYWRIGHT_AVAILABLE:
-            try:
-                print(f"[Playwright] 搜索: {keyword}, 页码: {cursor}")
-                # 获取Cookie
-                cookie, _ = account_pool.fetch()
-                # 执行搜索
-                weibo_list = sync_search_weibo(
-                    keyword, page=cursor, is_hot=is_hot, cookie=cookie
-                )
-
-                if weibo_list is None or len(weibo_list) == 0:
-                    self.write(WeiboCurlError.PAGE_NOT_FOUND)
-                    return
-
-                # 成功返回结果
-                success = settings.SUCCESS.copy()
-                success["data"] = {
-                    "result": weibo_list,
-                    "cursor": str(cursor + 1) if cursor < 50 else "0",
-                }
-                self.write(success)
-                print(f"[Playwright] 成功返回 {len(weibo_list)} 条微博")
+            if keyword is None:
+                self.write(WeiboCurlError.REQUEST_LACK_ARGS)  # 缺少参数
                 return
 
-            except Exception as e:
-                print(f"[Playwright] 搜索失败: {e}")
-                import traceback
+            try:
+                cursor = 1 if not cursor else int(cursor)
+            except ValueError:
+                self.write(WeiboCurlError.REQUEST_ARGS_ERROR)
+                return
 
-                traceback.print_exc()
-                # 如果Playwright失败，继续尝试传统方式
-                pass
+            # 进行爬取
+            search_weibo_curl_result = yield weibo_web_curl(
+                SpiderAim.search_weibo,
+                keyword=keyword,
+                page_num=cursor,
+                is_hot=is_hot,
+            )
+            if not search_weibo_curl_result["error_code"]:
+                self.response = search_weibo_curl_result["response"]
+            else:
+                error_res = curl_result_to_api_result(search_weibo_curl_result)
+                self.write(error_res)
+                return
 
-        # 传统方式（可能失败）
-        print("[传统方式] 搜索（可能因SPA页面而失败）")
-        # 进行爬取
-        search_weibo_curl_result = yield weibo_web_curl(
-            SpiderAim.search_weibo, keyword=keyword, page_num=cursor, is_hot=is_hot
-        )
-        if not search_weibo_curl_result["error_code"]:
-            self.response = search_weibo_curl_result["response"]
-        else:
-            error_res = curl_result_to_api_result(search_weibo_curl_result)
-            self.write(error_res)
+            # 构建解析器并获取微博信息
+            searchWeiboParser = SearchWeiboParser(self.response)
+            try:
+                weibo_list = searchWeiboParser.parse_page()
+            except HTMLParseException:
+                self.write(WeiboCurlError.HTML_PARSE_ERROR)
+                return
+
+            if weibo_list is None:
+                self.write(WeiboCurlError.PAGE_NOT_FOUND)  # 页面找不到
+                return
+
+            # 成功返回结果
+            success = settings.SUCCESS.copy()
+            success["data"] = {
+                "result": weibo_list,
+                "cursor": str(cursor + 1) if cursor < 50 else "0",
+            }
+            self.write(success)
+
+            # 终端输出只保留摘要（避免刷屏/泄露具体内容）
+            print(
+                f"[search_tweets] success keyword={keyword} page={cursor} "
+                f"count={len(weibo_list)} next_cursor={success['data']['cursor']}"
+            )
             return
-
-        # 获取响应体（支持JSON和HTML两种格式）
-        try:
-            # 尝试获取响应内容
-            response_body = self.response.body.decode("utf-8")
         except Exception as e:
-            print(f"解码响应失败: {e}")
-            self.write(WeiboCurlError.HTML_PARSE_ERROR)
+            report_log(e)
+            self.write(WeiboCurlError.UNKNOWN_ERROR)
+            print(f"[search_tweets] fail keyword={keyword} page={cursor}")
             return
-
-        # 构建解析器（传入响应体而不是response对象）
-        searchWeiboParser = SearchWeiboParser(response_body)
-
-        # 获取微博信息
-        try:
-            weibo_list = searchWeiboParser.parse_page()
-            # print(weibo_list)
-        except HTMLParseException as e:
-            print(f"解析失败: {e}")
-            self.write(WeiboCurlError.HTML_PARSE_ERROR)
-            return
-        except Exception as e:
-            print(f"未知错误: {e}")
-            self.write(WeiboCurlError.HTML_PARSE_ERROR)
-            return
-
-        if weibo_list is None or (
-            isinstance(weibo_list, list) and len(weibo_list) == 0
-        ):
-            self.write(WeiboCurlError.PAGE_NOT_FOUND)  # 页面找不到
-            return
-        # 成功返回结果
-        success = settings.SUCCESS.copy()
-        success["data"] = {
-            "result": weibo_list,
-            "cursor": str(cursor + 1) if cursor < 50 else "0",
-        }
-        self.write(success)
-        # self.save_data_to_mongo(weibo_list, 'search_tweets')
-        print(success)
-        return
 
     # @gen.coroutine
     # def get_all(self):
@@ -220,8 +181,22 @@ class StatusesShowHandler(BaseHandler):
         # 构建解析器
         try:
             commonParser = CommentParser(weibo_id, response=self.response)
-        except CookieInvalidException:
+        except CookieInvalidException as e:
+            # 真正的Cookie失效（被重定向到登录页）
+            print(f"[statuses_show] Cookie invalid for weibo_id={weibo_id}: {e.message}")
             self.write(WeiboCurlError.COOKIE_INVALID)
+            return
+        except PageContentEmptyException as e:
+            # 页面内容为空（微博不存在或已删除，非Cookie问题）
+            print(f"[statuses_show] Page empty for weibo_id={weibo_id}: {e.message}")
+            error_response = WeiboCurlError.PAGE_CONTENT_EMPTY.copy()
+            error_response["error_msg"] = f"Weibo {weibo_id} page is empty, may be deleted or not exist."
+            self.write(error_response)
+            return
+        except HTMLParseException as e:
+            # 页面结构解析错误
+            print(f"[statuses_show] HTML parse error for weibo_id={weibo_id}: {e.message}")
+            self.write(WeiboCurlError.HTML_PARSE_ERROR)
             return
 
         try:
@@ -584,10 +559,16 @@ class AccountUpdateHandler(BaseHandler):
 
     def post(self):
         json_obj = self.get_json()
-        cookies, proxies = json_obj.get("cookies"), json_obj.get("proxies")
+        # 只支持移动端 cookies
+        cookies = json_obj.get("cookies")
+        cookies_mobile = json_obj.get("cookies_mobile")
+        proxies = json_obj.get("proxies")
 
         try:
-            account_pool.update(cookies, proxies)
+            # 若只给了旧 cookies，则更新 mobile
+            if cookies is not None and cookies_mobile is None:
+                cookies_mobile = cookies
+            update_pools(new_cookies_mobile=cookies_mobile, new_proxies=proxies)
         except ValueError:
             error = WeiboCurlError.REQUEST_ARGS_ERROR
             error["error_msg"] += "Cookies or proxies is an empty list."
@@ -595,7 +576,12 @@ class AccountUpdateHandler(BaseHandler):
             return
 
         success = settings.SUCCESS.copy()
-        success["data"] = {"result": account_pool.accounts, "cursor": ""}
+        success["data"] = {
+            "result": {
+                "mobile": account_pool_mobile.accounts if account_pool_mobile else [],
+            },
+            "cursor": "",
+        }
         self.write(success)
         return
 
@@ -614,11 +600,18 @@ if __name__ == "__main__":
     )  # 定义端口号
     ROUTE_PREFIX = r"/weibo_curl/api/"  # 路由前缀
 
+    # 降低 tornado access 日志（否则大量 404/200 会刷屏）
+    import logging as _logging
+
+    _logging.getLogger("tornado.access").setLevel(_logging.ERROR)
+
     app = tornado.web.Application(
         [
             (ROUTE_PREFIX + r"users_show", UsersShowHandler),
             (ROUTE_PREFIX + r"statuses_user_timeline", UserTimelineHandler),
             (ROUTE_PREFIX + r"statuses_show", StatusesShowHandler),
+            # 兼容后端/前端调用的 PC 端详情接口：先复用移动端实现，避免 404 刷屏
+            (ROUTE_PREFIX + r"statuses_show_pc", StatusesShowHandler),
             (ROUTE_PREFIX + r"friends_list", FriendsHandler),
             (ROUTE_PREFIX + r"followers_list", FollowersHandler),
             (ROUTE_PREFIX + r"search_tweets", SearchTweetsHandler),

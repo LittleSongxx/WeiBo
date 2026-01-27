@@ -17,7 +17,9 @@ import sys, codecs
 
 import os
 
-stopwords_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stopwords.txt')
+stopwords_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "stopwords.txt"
+)
 
 
 # 计算词语数
@@ -38,13 +40,17 @@ def get_cluster_data(twitter_data, num_clusters):
     # 获取每个簇的id
     for cluster_num in range(num_clusters):
         cluster_details[cluster_num] = {}
-        cluster_details[cluster_num]['cluster_num'] = cluster_num  # 簇序号
+        cluster_details[cluster_num]["cluster_num"] = cluster_num  # 簇序号
 
-        id_s = twitter_data[twitter_data['cluster'] == cluster_num]['_id'].values.tolist()
-        cluster_details[cluster_num]['_id'] = id_s
+        id_s = twitter_data[twitter_data["cluster"] == cluster_num][
+            "_id"
+        ].values.tolist()
+        cluster_details[cluster_num]["_id"] = id_s
 
-        fulltext = twitter_data[twitter_data['cluster'] == cluster_num]['cleaned_fulltext'].values.tolist()
-        cluster_details[cluster_num]['Cleaned_fulltext'] = fulltext
+        fulltext = twitter_data[twitter_data["cluster"] == cluster_num][
+            "cleaned_fulltext"
+        ].values.tolist()
+        cluster_details[cluster_num]["Cleaned_fulltext"] = fulltext
 
     return cluster_details
 
@@ -65,16 +71,42 @@ def print_cluster_data(cluster_data):
 
 # client = pymongo.MongoClient('mongodb://10.245.142.249:27017/')
 # mdb = client['person_scout_all']
-client = pymongo.MongoClient('mongodb://127.0.0.1:27017/')
-mdb = client['weibo_sjy']
+client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+mdb = client["weibo_sjy"]
 
 
 def cluster_extract(post_list):
+    """
+    对微博评论进行聚类并提取关键词
+
+    Args:
+        post_list: 包含 _id 和 fulltext 字段的字典列表
+
+    Returns:
+        DataFrame: 聚类结果，如果数据不足则返回None
+    """
+    # 检查输入数据
+    if not post_list:
+        print("警告: post_list为空，无法进行聚类")
+        return None
+
     twitter_data = pd.DataFrame(post_list)
-    if twitter_data.get('fulltext') is None:
-        return
-    documents, cleaned_fulltext = normalize_corpus(twitter_data)  # 做数据清洗，并处理成对应的格式
-    twitter_data['cleaned_fulltext'] = cleaned_fulltext
+
+    # 检查是否有fulltext列
+    if twitter_data.get("fulltext") is None or len(twitter_data) == 0:
+        print(f"警告: 数据中没有fulltext字段或数据为空，数据量: {len(twitter_data)}")
+        return None
+
+    documents, cleaned_fulltext = normalize_corpus(
+        twitter_data
+    )  # 做数据清洗，并处理成对应的格式
+
+    # 检查清洗后的数据
+    if not documents or not cleaned_fulltext:
+        print("警告: 数据清洗后为空，无法聚类")
+        return None
+
+    twitter_data["cleaned_fulltext"] = cleaned_fulltext
 
     # 2.聚类
     texts = [text.split() for text in documents]
@@ -84,7 +116,7 @@ def cluster_extract(post_list):
     mgp = MovieGroupProcess(K=6, alpha=0.01, beta=0.02, n_iters=60)
     y = mgp.fit(texts, V)  # 聚类结果
     # print"每一类聚的推文数：",Counter(y))
-    twitter_data['cluster'] = y  # 把聚类结果添加到DataFrame数据中
+    twitter_data["cluster"] = y  # 把聚类结果添加到DataFrame数据中
     print(twitter_data)
 
     # 3.关键词提取
@@ -101,7 +133,7 @@ def cluster_extract(post_list):
 
     # 3.使用tf-idf法提取关键词
 
-    stopkey = [w.strip() for w in codecs.open(stopwords_path, 'rb').readlines()]
+    stopkey = [w.strip() for w in codecs.open(stopwords_path, "rb").readlines()]
     # tf-idf关键词抽取
     result = getKeywords_tfidf(cluster_dfdata_T, stopkey, 3)
 
@@ -116,23 +148,35 @@ def run_by_id(event_id):
 
     post_list = []
 
-    for post in mdb['event_post_weibo'].find({'event_id': event_id}):
-        post_list.append({'_id': str(post['related_post']['id_str']), 'fulltext': post['related_post']['full_text']})
-    for post in mdb['event_post'].find({'event_id': event_id}):
-        post_list.append({'_id': str(post['related_post']['id_str']), 'fulltext': post['related_post']['full_text']})
+    for post in mdb["event_post_weibo"].find({"event_id": event_id}):
+        post_list.append(
+            {
+                "_id": str(post["related_post"]["id_str"]),
+                "fulltext": post["related_post"]["full_text"],
+            }
+        )
+    for post in mdb["event_post"].find({"event_id": event_id}):
+        post_list.append(
+            {
+                "_id": str(post["related_post"]["id_str"]),
+                "fulltext": post["related_post"]["full_text"],
+            }
+        )
 
     if post_list:
         result = cluster_extract(post_list)
         if result:
-            mdb['event_classify'].remove({'event_id': event_id})
-            for row in result.itertuples(index=True, name='Pandas'):
-                data = {'event_id': event_id, 'keyword': getattr(row, "key"), 'posts': getattr(row, "id"),
-                        'spread_analysis': False}
-                mdb['event_classify'].insert_one(data)
+            mdb["event_classify"].remove({"event_id": event_id})
+            for row in result.itertuples(index=True, name="Pandas"):
+                data = {
+                    "event_id": event_id,
+                    "keyword": getattr(row, "key"),
+                    "posts": getattr(row, "id"),
+                    "spread_analysis": False,
+                }
+                mdb["event_classify"].insert_one(data)
         else:
-            print('No fulltext is None!!!')
-
-
+            print("No fulltext is None!!!")
 
 
 def run_by_id_str(person_id, source):
@@ -140,21 +184,30 @@ def run_by_id_str(person_id, source):
     # printperson_id)
     post_list = []
 
-    if source == 'twitter':
-        doc = 'person_post'
-    elif source == 'weibo':
-        doc = 'person_post_weibo'
-    for post in mdb[doc].find({'person_id': person_id}):
-        post_list.append({'_id': str(post['person_post']['id_str']), 'fulltext': post['person_post']['full_text']})
+    if source == "twitter":
+        doc = "person_post"
+    elif source == "weibo":
+        doc = "person_post_weibo"
+    for post in mdb[doc].find({"person_id": person_id}):
+        post_list.append(
+            {
+                "_id": str(post["person_post"]["id_str"]),
+                "fulltext": post["person_post"]["full_text"],
+            }
+        )
 
     if post_list:
 
         result = cluster_extract(post_list)
-        mdb['person_classify'].remove({'person_id': person_id})
-        for row in result.itertuples(index=True, name='Pandas'):
-            data = {'person_id': person_id, 'keyword': getattr(row, "key"), 'posts': getattr(row, "id"),
-                    'spread_analysis': False}
-            mdb['person_classify'].insert_one(data)
+        mdb["person_classify"].remove({"person_id": person_id})
+        for row in result.itertuples(index=True, name="Pandas"):
+            data = {
+                "person_id": person_id,
+                "keyword": getattr(row, "key"),
+                "posts": getattr(row, "id"),
+                "spread_analysis": False,
+            }
+            mdb["person_classify"].insert_one(data)
 
 
 import datetime
@@ -169,33 +222,32 @@ def run_by_time():
         for i in time_range:
             if now_time - i > 5:
                 continue
-        for event in mdb['event'].find():
-            run_by_id(event['_id'])
+        for event in mdb["event"].find():
+            run_by_id(event["_id"])
+
 
 # 任务进入接口
 def run_by_task_id(task_id):
     post_list = []
-    for post in mdb['Reposts'].find({'task_id': task_id}):
-        if post['content'].strip() == "" or post['content'].strip() == "转发微博":
+    for post in mdb["Reposts"].find({"task_id": task_id}):
+        if post["content"].strip() == "" or post["content"].strip() == "转发微博":
             continue
-        post_list.append({'_id': post['_id'], 'fulltext': post['content']})
+        post_list.append({"_id": post["_id"], "fulltext": post["content"]})
     print(len(post_list))
     result = cluster_extract(post_list)
-    mydict = result.to_dict(orient='index')
+    mydict = result.to_dict(orient="index")
     key_list = list(mydict.keys())
     for key in key_list:
         mydict[str(key)] = mydict.pop(key)
-        while '' in mydict[str(key)]["content"]:
-            mydict[str(key)]["content"].remove('')
-    obid = mdb['cluster'].insert_one(mydict)
+        while "" in mydict[str(key)]["content"]:
+            mydict[str(key)]["content"].remove("")
+    obid = mdb["cluster"].insert_one(mydict)
     return obid.__str__()
 
 
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     from bson import ObjectId
 
     # run_by_time()
     ## printrun_by_id(ObjectId("5db6abe0c03558516c2632a8")))
-    run_by_task_id('111')
+    run_by_task_id("111")

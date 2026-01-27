@@ -434,3 +434,23 @@ example 与朋友列表接口返回的一样。
 4.依此点击Chrome开发者工具中的Network->Name中的weibo.cn->Headers->Request Headers，"Cookie:"后的值即为我们要找的cookie值，复制即可，如图所示：
 ![](https://picture.cognize.me/cognize/github/weibospider/cookie3.png)
 5.获得cookie后将其粘贴到account->account.json文件中的cookies对应配置项即可。
+
+## 自动更新 cookie（推荐）
+
+项目同时会访问 `weibo.cn`（手机站）和 `s.weibo.com`（PC 搜索页），两者 cookie 不一定通用。
+你可以使用脚本自动登录并写回 `account/account.json`（需要本机具备可用的浏览器驱动/selenium 环境）：
+
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate graduation
+export WEIBO_USERNAME="你的账号"
+export WEIBO_PASSWORD="你的密码"
+cd code/weibo_crawler
+python -m account.refresh_cookie --update-json --validate
+```
+
+可选：推送到运行中的 `weibo_curl` 服务以热更新（避免重启服务）：
+
+```bash
+python -m account.refresh_cookie --update-json --validate \
+  --push-api http://127.0.0.1:8001/weibo_curl/api/account_update
+```

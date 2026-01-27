@@ -21,8 +21,20 @@ export default {
       this.$axios
         .get("comment/tendency?tag_task_id="+query.tag_task_id+"&weibo_id="+query.weibo_id)
         .then((res) => {
+          // 检查数据是否存在
+          if (!res.data || !res.data.data || !res.data.data.data) {
+            console.log("发展趋势数据为空");
+            return;
+          }
           let trend = res.data.data.data;
-          console.log(trend)
+          console.log("发展趋势数据:", trend);
+
+          // 检查数据是否有效
+          if (!trend.data_time || !trend.data_count || trend.data_time.length === 0) {
+            console.log("发展趋势数据无效");
+            return;
+          }
+
           option = {
             tooltip: {
               trigger: "axis",
@@ -49,6 +61,9 @@ export default {
             ],
           };
           myChart.setOption(option);
+        })
+        .catch((error) => {
+          console.error("获取发展趋势数据失败:", error);
         });
       option && myChart.setOption(option);
     },

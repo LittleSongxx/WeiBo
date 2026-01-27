@@ -25,12 +25,25 @@ export default {
             "comment/cluster/type?tag_task_id="+query.tag_task_id+"&weibo_id="+query.weibo_id
         )
         .then((res) => {
-          console.log(res)
-          for (let index in res.data.data) {
-            this.topic_analysis[index] = res.data.data[index];
-            this.topic_analysis[index].name = res.data.data[index].key;
-            this.topic_analysis[index].value = res.data.data[index].doc_count;
+          console.log("主题分析数据:", res)
+          // 重置数组，避免数据残留
+          this.topic_analysis = [];
+          if (res.data && res.data.data && Array.isArray(res.data.data)) {
+            // 使用新数组存储转换后的数据
+            this.topic_analysis = res.data.data.map(item => ({
+              name: item.key || '未知',
+              value: item.doc_count || 0,
+              key: item.key,
+              doc_count: item.doc_count
+            }));
           }
+
+          // 如果没有数据，不渲染图表
+          if (this.topic_analysis.length === 0) {
+            console.log("主题分析数据为空");
+            return;
+          }
+
           option = {
             legend: {
               orient: "vertical",
@@ -56,6 +69,9 @@ export default {
             ],
           };
           myChart.setOption(option);
+        })
+        .catch((error) => {
+          console.error("获取主题分析数据失败:", error);
         });
       option && myChart.setOption(option);
     },

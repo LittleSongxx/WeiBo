@@ -5,8 +5,10 @@
 """
 
 import json
+from json import JSONDecodeError
 
 import requests
+from requests import RequestException
 from fastapi import APIRouter, Depends, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -122,8 +124,35 @@ def search(tag: str, cursor: int):
             keyword=tag, cursor=cursor
         )
     )
-    response = requests.get(url)
-    weibo_dict = json.loads(response.text).get("data")
+    # 调用本机/内网服务时，禁用环境变量代理（否则可能被 HTTP_PROXY 劫持到 127.0.0.1:7890 等）
+    session = requests.Session()
+    session.trust_env = False
+    try:
+        response = session.get(url, timeout=10)
+    except RequestException as e:
+        return RESTfulModel(code=-1, data=f"weibo_curl 请求失败: {e}")
+
+    # 上游服务异常时可能返回空串/HTML，避免直接 json.loads 崩溃导致 500
+    if not response.text:
+        return RESTfulModel(
+            code=-1,
+            data=f"weibo_curl 返回空响应: status={response.status_code}, url={url}",
+        )
+
+    try:
+        payload = response.json()
+    except (ValueError, JSONDecodeError):
+        snippet = response.text[:200].replace("\n", " ")
+        return RESTfulModel(
+            code=-1,
+            data=f"weibo_curl 返回非JSON: status={response.status_code}, snippet={snippet}",
+        )
+
+    # 兼容 weibo_crawler 的返回格式：{error_code, data, error_msg}
+    if isinstance(payload, dict) and payload.get("error_code", 0) != 0:
+        return RESTfulModel(code=-1, data=payload)
+
+    weibo_dict = payload.get("data") if isinstance(payload, dict) else None
     return RESTfulModel(code=0, data=weibo_dict)
 
 
@@ -165,13 +194,22 @@ async def get_detail_blog(
     mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     blog = list()
+    session = requests.Session()
+    session.trust_env = False
     for i in range(1, 11, 1):
-        url = "http://127.0.0.1:8001/weibo_curl/api/statuses_user_timeline?user_id={user_id}&cursor={i}".format(
+        url = (
+            weibo_conf.BASEPATH
+            + "/weibo_curl/api/statuses_user_timeline?user_id={user_id}&cursor={i}".format(
             user_id=user_id, i=i
+            )
         )
         print(url)
-        response = requests.get(url)
-        data = json.loads(response.text)
+        try:
+            response = session.get(url, timeout=10)
+            data = response.json() if response.text else {}
+        except Exception as e:
+            print("weibo_curl 请求/解析失败:", e)
+            data = {}
         print(data)
         if data["error_code"] == 0:
             blog.extend(data["data"]["result"]["weibos"])

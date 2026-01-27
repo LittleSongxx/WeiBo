@@ -9,6 +9,7 @@ from celery_task.utils import mongo_client
 from celery_task.utils.gopup_utils import user
 import requests
 import json
+from config import weibo_conf
 
 
 def introduce(tag_data: dict, tag_task_id: str):
@@ -45,15 +46,26 @@ def introduce(tag_data: dict, tag_task_id: str):
 
 def get_user_data(user_id) -> json:
     """
-    获取user详细信息
+    获取user详细信息，优先使用weibo_curl，失败则用gopup兜底
     :param user_id:微博user_id
     :return:
     """
-    url = f"http://127.0.0.1:8001/weibo_curl/api/users_show?user_id={user_id}"
-    response = requests.get(url)
-    response_dict = json.loads(response.text)
-    if response_dict.get("data"):
-        user_dict = response_dict.get("data").get("result")
-        return user_dict
-    else:
+    # 第一步：尝试从weibo_curl API获取
+    try:
+        url = weibo_conf.BASEPATH + f"/weibo_curl/api/users_show?user_id={user_id}"
+        session = requests.Session()
+        session.trust_env = False  # 禁用环境代理
+        session.proxies = {}  # 显式清除所有代理设置
+        response = session.get(url, timeout=10)
+        response_dict = json.loads(response.text)
+        if response_dict.get("data") and response_dict.get("data").get("result"):
+            return response_dict.get("data").get("result")
+    except Exception as e:
+        print(f"警告: 从weibo_curl获取用户{user_id}失败: {e}，使用gopup兜底")
+
+    # 第二步：使用gopup兜底获取
+    try:
         return user(user_id)
+    except Exception as gopup_e:
+        print(f"错误: gopup获取用户{user_id}也失败: {gopup_e}")
+        return None

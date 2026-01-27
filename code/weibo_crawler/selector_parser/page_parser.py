@@ -14,7 +14,7 @@ from settings import LOGGING
 from web_curl import SpiderAim, weibo_web_curl
 import settings
 from .base_parser import BaseParser
-from weibo_curl_error import HTMLParseException, CookieInvalidException
+from weibo_curl_error import HTMLParseException, CookieInvalidException, PageContentEmptyException, WeiboNotFoundException
 
 
 class Weibo:
@@ -648,13 +648,55 @@ class BaseCommentParser(BaseParser):
 class CommentParser(BaseCommentParser):
     def __init__(self, weibo_id, response=None):
         super().__init__(weibo_id, response)
+        self.info_node = None
+        self.page_status = "unknown"  # 页面状态: ok, empty, login_required, not_found
+        
         if self.selector is not None:
+            # 先检查页面内容，区分不同的错误类型
+            body_text = ""
+            try:
+                # 获取页面文本内容用于判断
+                body_text = etree.tostring(self.selector, encoding='unicode', method='text')
+            except:
+                pass
+            
+            # 检查是否是登录页面（真正的Cookie失效）
+            is_login_page = False
+            is_login_page = is_login_page or "passport.weibo" in body_text
+            is_login_page = is_login_page or "新浪通行证" in body_text
+            is_login_page = is_login_page or "帐号登录" in body_text
+            is_login_page = is_login_page or "账号登录" in body_text
+            is_login_page = is_login_page or "请输入验证码" in body_text
+            
+            # 检查页面title
+            title_nodes = self.selector.xpath("//title/text()")
+            page_title = title_nodes[0].strip() if title_nodes else ""
+            is_login_page = is_login_page or page_title in ("新浪通行证", "登录 - 新浪微博", "登录", "Login")
+            
+            if is_login_page:
+                self.page_status = "login_required"
+                raise CookieInvalidException("Cookie invalid: redirected to login page.")
+            
+            # 尝试获取微博主体节点
             try:
                 self.info_node = self.selector.xpath("//div[@id='M_']")[0]
+                self.page_status = "ok"
             except IndexError:
-                raise CookieInvalidException
-        else:
-            self.info_node = None
+                # 没有找到微博主体节点，但不是登录页
+                # 检查是否有任何评论相关内容
+                has_comment_content = "评论" in body_text or "转发" in body_text
+                has_weibo_content = len(self.selector.xpath("//div[@class='c']")) > 0
+                
+                if has_comment_content or has_weibo_content:
+                    # 页面有内容但没有M_节点，可能是页面结构变化
+                    self.page_status = "parse_error"
+                    LOGGING.warning(f"[CommentParser] 微博 {weibo_id} 页面结构异常，无法找到M_节点")
+                    raise HTMLParseException(f"Page structure changed, cannot find M_ node for weibo {weibo_id}")
+                else:
+                    # 页面内容为空，可能是微博不存在或已删除
+                    self.page_status = "empty"
+                    LOGGING.warning(f"[CommentParser] 微博 {weibo_id} 页面内容为空，可能已删除或不存在")
+                    raise PageContentEmptyException(f"Weibo {weibo_id} page is empty, may be deleted or not exist.")
 
     @gen.coroutine
     def _build_selector(self):

@@ -39,7 +39,17 @@ export default {
       this.$axios
         .get("comment/key_node?tag_task_id="+query.tag_task_id+"&weibo_id="+query.weibo_id)
         .then((res) => {
-          this.essential_nodes = res.data.data;
+          console.log("关键转发节点数据:", res);
+          // res.data 是 RESTfulModel: {code: 0, data: {data: [...], comments: [...]}}
+          if (res.data && res.data.data && res.data.data.data) {
+            this.essential_nodes = res.data.data.data;
+          } else {
+            this.essential_nodes = [];
+          }
+        })
+        .catch((error) => {
+          console.error("获取关键转发节点失败:", error);
+          this.essential_nodes = [];
         });
     },
   },

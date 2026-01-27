@@ -5,6 +5,7 @@ import home from '../pages/home';
 import login from '../pages/login';
 import blog_detail from '../pages/blog_detail';
 import person_list from '../pages/person_list';
+import task_monitor from '../pages/task_monitor';
 
 export default new VueRouter({
     routes: [{
@@ -48,6 +49,13 @@ export default new VueRouter({
             component: person_list,
             meta: {
                 title: "用户列表"
+            }
+        },
+        {
+            path: "/task_monitor",
+            component: task_monitor,
+            meta: {
+                title: "任务监控"
             }
         }
     ],

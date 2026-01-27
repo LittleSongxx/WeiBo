@@ -31,7 +31,7 @@
         >#{{ topic }}#</span
       >
     </div>
-    <div class="follow_info">转发()点赞()评论()</div>
+    <div class="follow_info">转发({{ blog_info.retweet_count || 0 }}) 点赞({{ blog_info.favorite_count || 0 }}) 评论({{ blog_info.comment_count || 0 }})</div>
   </div>
 </template>
 
@@ -44,6 +44,8 @@ export default {
       show_detail: true,
       weibo_content: "",
       weibo_content_total: "",
+      retry_count: 0,
+      max_retries: 10,  // 最多重试10次（约30-50秒）
     };
   },
   filters: {
@@ -58,14 +60,77 @@ export default {
       this.$axios
         .get("comment/post_detail?tag_task_id="+query.tag_task_id+"&weibo_id="+query.weibo_id)
         .then((res) => {
-          this.blog_info = res;
-          console.log(this.blog_info);
-          this.blog_info.user_head = res.data.data.original_pics[0];
-          this.weibo_content = res.data.data.weibo_content.slice(0, 150);
-          this.weibo_content_total = res.data.data.weibo_content;
+          console.log("getBlogInfo response:", res);
+          if (!res.data || !res.data.data) {
+            this.$message({
+              message: "获取博文详情失败：数据为空",
+              type: "warning"
+            });
+            return;
+          }
+          
+          const data = res.data.data;
+          // 检查是否是状态信息（任务未完成）
+          if (data.status) {
+            if (this.retry_count >= this.max_retries) {
+              this.$message({
+                message: "等待超时，请稍后手动刷新页面",
+                type: "warning"
+              });
+              return;
+            }
+            
+            if (data.status === "processing") {
+              this.retry_count++;
+              this.$message({
+                message: `分析任务进行中，请稍候... (${this.retry_count}/${this.max_retries})`,
+                type: "info",
+                duration: 2000
+              });
+              // 3秒后重试
+              setTimeout(() => this.getBlogInfo(), 3000);
+              return;
+            } else if (data.status === "not_found") {
+              this.retry_count++;
+              this.$message({
+                message: `该微博的分析任务尚未创建，等待中... (${this.retry_count}/${this.max_retries})`,
+                type: "info",
+                duration: 2000
+              });
+              // 5秒后重试
+              setTimeout(() => this.getBlogInfo(), 5000);
+              return;
+            } else if (data.status === "failed") {
+              this.$message({
+                message: "分析任务失败：" + (data.message || "未知错误"),
+                type: "error"
+              });
+              return;
+            }
+          }
+          
+          // 成功获取数据，重置重试计数
+          this.retry_count = 0;
+
+          // 正常数据 - data 包含 user_head, user_name, created_at, weibo_content, topics 等字段
+          this.blog_info = data;
+          if (data.original_pics && data.original_pics.length > 0) {
+            this.blog_info.user_head = data.original_pics[0];
+          }
+          if (data.weibo_content) {
+            this.weibo_content = data.weibo_content.slice(0, 150);
+            this.weibo_content_total = data.weibo_content;
           if (this.weibo_content_total != this.weibo_content) {
             this.show_detail = false;
           }
+          }
+        })
+        .catch((error) => {
+          console.error("getBlogInfo error:", error);
+          this.$message({
+            message: "获取博文详情失败：" + (error.message || "网络错误"),
+            type: "error"
+          });
         });
     },
     showDetail() {

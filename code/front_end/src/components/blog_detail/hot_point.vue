@@ -43,8 +43,17 @@ export default {
       this.$axios
         .get("comment/key_node?tag_task_id="+query.tag_task_id+"&weibo_id="+query.weibo_id)
         .then((res) => {
-          console.log(res)
-          this.comments = res.data.comments;
+          console.log("热点转发数据:", res);
+          // res.data 是 RESTfulModel: {code: 0, data: {data: [...], comments: [...]}}
+          if (res.data && res.data.data && res.data.data.comments) {
+            this.comments = res.data.data.comments;
+          } else {
+            this.comments = [];
+          }
+        })
+        .catch((error) => {
+          console.error("获取热点转发失败:", error);
+          this.comments = [];
         });
     },
   },

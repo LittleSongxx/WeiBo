@@ -26,8 +26,31 @@ export default {
     getCloudWord(id) {
       this.$axios.get("word_cloud?tag_task_id=" + id).then((res) => {
         console.log(res.data)
-        this.cloud_word = res.data.data.data;
-        this.myWordCloud(res.data.data.data);
+        if (!res.data || !res.data.data) {
+          console.error("获取词云数据失败: 响应数据为空");
+          this.$message({
+            message: "获取词云数据失败，请稍后重试",
+            type: "warning"
+          });
+          return;
+        }
+        const wordData = res.data.data.data || res.data.data;
+        if (!wordData || (Array.isArray(wordData) && wordData.length === 0)) {
+          console.warn("词云数据为空");
+          this.$message({
+            message: "暂无词云数据",
+            type: "info"
+          });
+          return;
+        }
+        this.cloud_word = wordData;
+        this.myWordCloud(wordData);
+      }).catch((error) => {
+        console.error("获取词云数据失败:", error);
+        this.$message({
+          message: "获取词云数据失败，请稍后重试",
+          type: "error"
+        });
       });
     },
     myWordCloud(data) {

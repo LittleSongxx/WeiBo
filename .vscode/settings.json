@@ -1,3 +1,8 @@
 {
-    "terminal.integrated.fontFamily": "Consolas"
+    "claudeCodeChat.permissions.yoloMode": false,
+    "chat.editor.fontFamily": "Consolas",
+    "chat.fontFamily": "Consolas",
+    "chat.fontSize": 15,
+    "terminal.integrated.fontFamily": "Consolas",
+    "chat.editor.fontSize": 15
 }

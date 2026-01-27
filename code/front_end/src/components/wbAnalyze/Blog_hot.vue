@@ -49,22 +49,56 @@ export default {
   },
   methods: {
     requsetHotBlog(id) {
+      this.total_hot = 0; // 重置总数
       this.$axios
         .get("blog_rank?tag_task_id="+id)
         .then((res) => {
-          this.hot_blogs = res.data.data;
-          console.log(this.hot_blogs)
-          for (let index in this.hot_blogs) {
-            this.total_hot =
-              this.total_hot + Number(this.hot_blogs[index].hot_count);
+          if (!res.data || !res.data.data) {
+            console.error("获取博文热度数据失败: 响应数据为空");
+            this.$message({
+              message: "获取博文热度数据失败，请稍后重试",
+              type: "warning"
+            });
+            this.hot_blogs = [];
+            return;
           }
-          for (let index in this.hot_blogs) {
-            this.hot_blogs[index].hot_proportion = (
-              (this.hot_blogs[index].hot_count / this.total_hot) *
-              100
-            ).toFixed(1);
-            this.hot_blogs[index].hot_proportion += "%";
+          
+          const blogData = res.data.data;
+          if (!Array.isArray(blogData)) {
+            console.error("博文热度数据格式错误");
+            this.hot_blogs = [];
+            return;
           }
+          
+          this.hot_blogs = blogData;
+          console.log(this.hot_blogs);
+          
+          // 计算总热度
+          for (let index in this.hot_blogs) {
+            if (this.hot_blogs[index] && this.hot_blogs[index].hot_count) {
+              this.total_hot += Number(this.hot_blogs[index].hot_count);
+            }
+          }
+          
+          // 计算每个博文的比例
+          if (this.total_hot > 0) {
+            for (let index in this.hot_blogs) {
+              if (this.hot_blogs[index] && this.hot_blogs[index].hot_count) {
+                this.hot_blogs[index].hot_proportion = (
+                  (this.hot_blogs[index].hot_count / this.total_hot) *
+                  100
+                ).toFixed(1);
+                this.hot_blogs[index].hot_proportion += "%";
+              }
+            }
+          }
+        }).catch((error) => {
+          console.error("获取博文热度数据失败:", error);
+          this.$message({
+            message: "获取博文热度数据失败，请稍后重试",
+            type: "error"
+          });
+          this.hot_blogs = [];
         });
     },
     ToBolgDetail(weibo_id) {

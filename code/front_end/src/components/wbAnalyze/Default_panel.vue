@@ -72,15 +72,42 @@ export default {
   methods: {
     requesrInfo() {
       this.$axios.get("/tag_list").then((res) => {
-        this.topics_show = true;
-        this.defaultInfos = res.data.data;
-        for (let index in this.defaultInfos) {
-          this.defaultInfos[index] = {
-            ...this.defaultInfos[index].vital_user,
-            ...this.defaultInfos[index],
-          };
+        if (!res.data || !res.data.data) {
+          console.error("获取话题列表失败: 响应数据为空");
+          this.topics_show = true;
+          this.defaultInfos = [];
+          this.$message({
+            message: "获取话题列表失败，请稍后重试",
+            type: "warning"
+          });
+          return;
         }
-        this.$bus.$emit("send_tag_task_id", this.defaultInfos[0].tag_task_id);
+        
+        this.topics_show = true;
+        this.defaultInfos = res.data.data || [];
+        
+        // 处理每个话题的用户信息
+        for (let index in this.defaultInfos) {
+          if (this.defaultInfos[index] && this.defaultInfos[index].vital_user) {
+            this.defaultInfos[index] = {
+              ...this.defaultInfos[index].vital_user,
+              ...this.defaultInfos[index],
+            };
+          }
+        }
+        
+        // 如果有话题，发送第一个话题的ID
+        if (this.defaultInfos.length > 0 && this.defaultInfos[0].tag_task_id) {
+          this.$bus.$emit("send_tag_task_id", this.defaultInfos[0].tag_task_id);
+        }
+      }).catch((error) => {
+        console.error("获取话题列表失败:", error);
+        this.topics_show = true;
+        this.defaultInfos = [];
+        this.$message({
+          message: "获取话题列表失败，请稍后重试",
+          type: "error"
+        });
       });
     },
     refresh() {
@@ -109,18 +136,28 @@ export default {
         type: 'warning'
       }).then(() => {
         this.$axios.get('delete_task?tag_task_id=' + id).then((res) =>{
-          if(res.data.code == 0){
+          if(res && res.data && res.data.code == 0){
             this.defaultInfos.splice(index,1)
             this.$message({
               type: 'success',
               message: '删除成功!'
             });
+            // 如果删除后还有话题，发送第一个话题的ID
+            if (this.defaultInfos.length > 0 && this.defaultInfos[0].tag_task_id) {
+              this.$bus.$emit("send_tag_task_id", this.defaultInfos[0].tag_task_id);
+            }
           }else{
             this.$message({
               type: 'error',
-              message: res.data.data
+              message: res.data ? (res.data.data || '删除失败') : '删除失败'
             });
           }
+        }).catch((error) => {
+          console.error("删除话题失败:", error);
+          this.$message({
+            type: 'error',
+            message: '删除失败，请稍后重试'
+          });
         });
       }).catch(() => {
         this.$message({

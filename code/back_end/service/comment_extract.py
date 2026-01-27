@@ -43,8 +43,39 @@ async def getWeiboById(tag_task_id: str, weibo_id: str, mongo_db: AsyncIOMotorDa
         {"tag_task_id": tag_task_id, "weibo_id": weibo_id}
     )
     if result:
-        return result["detail"]
-    return None
+        # 检查任务状态
+        detail = result.get("detail")
+        if detail:
+            # 转换字段名以匹配前端期望的格式
+            # 前端 blog_info.vue 期望: user_head, user_name, created_at, weibo_content, topics, original_pics
+            transformed = {
+                "user_head": detail.get("user_head") or detail.get("head") or "",
+                "user_name": detail.get("user_name") or detail.get("screen_name") or "",
+                "created_at": detail.get("created_at") or "",
+                "weibo_content": detail.get("weibo_content") or detail.get("text") or "",
+                "topics": detail.get("topics") if isinstance(detail.get("topics"), list) else [detail.get("topics")] if detail.get("topics") else [],
+                "original_pics": detail.get("original_pics") or detail.get("pics") or [],
+                "weibo_id": detail.get("weibo_id") or weibo_id,
+                "user_id": detail.get("user_id") or "",
+                "retweet_count": detail.get("retweet_count") or "0",
+                "favorite_count": detail.get("favorite_count") or "0",
+                "comment_count": detail.get("comment_count") or "0",
+            }
+            return transformed
+
+        # 如果 detail 不存在或为空，检查任务状态
+        status = result.get("analysis_status")
+        if status == "SUCCESS":
+            # 任务已完成但 detail 为空，可能是数据格式问题
+            return None
+        if status in ("PENDING", "PROGRESS", "STARTED"):
+            # 任务还在处理中
+            return {"status": "processing", "message": f"分析任务进行中: {status}"}
+        if status:
+            # 任务失败/其他状态
+            return {"status": "failed", "message": f"分析任务失败: {status}"}
+    # 没有找到对应的评论任务记录，说明可能还没创建任务
+    return {"status": "not_found", "message": "该微博的分析任务尚未创建，请稍后再试"}
 
 
 async def getByTendencyId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
@@ -54,19 +85,24 @@ async def getByTendencyId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
     :param mongo_db:
     :return:
     """
+    if not comment_task_id:
+        return {"tag_comment_task_id": "", "data": {"data_time": [], "data_count": []}}
+
     item = await mongo_db[mongo_conf.COMMENT_TENDENCY].find_one(
         {"tag_comment_task_id": comment_task_id}
     )
-    if item:
-        item.pop("_id")
-    else:
-        raise
+    if not item:
+        return {"tag_comment_task_id": comment_task_id, "data": {"data_time": [], "data_count": []}}
+
+    item.pop("_id", None)
     data_time = []
     data_count = []
-    for i in item["data"]:
-        if i:
-            data_time.append(i["key"])
-            data_count.append(i["doc_count"])
+    item_data = item.get("data", [])
+    if item_data:
+        for i in item_data:
+            if i and isinstance(i, dict):
+                data_time.append(i.get("key", ""))
+                data_count.append(i.get("doc_count", 0))
     data = {"data_time": data_time, "data_count": data_count}
     item["data"] = data
     return item
@@ -79,12 +115,16 @@ async def getByCloudId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
     :param mongo_db:
     :return:
     """
+    if not comment_task_id:
+        return {"tag_comment_task_id": "", "data": []}
+
     item = await mongo_db[mongo_conf.COMMENT_CLOUD].find_one(
         {"tag_comment_task_id": comment_task_id}
     )
     if item:
-        item.pop("_id")
-    return item
+        item.pop("_id", None)
+        return item
+    return {"tag_comment_task_id": comment_task_id, "data": []}
 
 
 def getByClusterId(comment_task_id, mongo_db: AsyncIOMotorDatabase):
@@ -105,18 +145,24 @@ async def getTypeByClusterId(comment_task_id: str, mongo_db: AsyncIOMotorDatabas
     :param mongo_db:
     :return:
     """
+    if not comment_task_id:
+        return []
+
     item = await mongo_db[mongo_conf.COMMENT_CLUSTER].find_one(
         {"tag_comment_task_id": comment_task_id}
     )
-    if item:
-        item.pop("_id")
     result = []
-    for i in item["data"]:
-        key_count = {
-            "key": item["data"][i]["key"],
-            "doc_count": len(item["data"][i]["id"]),
-        }
-        result.append(key_count)
+    if item and "data" in item and item["data"]:
+        item.pop("_id", None)
+        data = item["data"]
+        if isinstance(data, dict):
+            for i in data:
+                if isinstance(data[i], dict) and "key" in data[i]:
+                    key_count = {
+                        "key": data[i]["key"],
+                        "doc_count": len(data[i].get("id", [])),
+                    }
+                    result.append(key_count)
     return result
 
 
@@ -129,24 +175,38 @@ async def getTypeByClusterId(comment_task_id: str, mongo_db: AsyncIOMotorDatabas
 
 
 async def getKeyNode(comment_task_id: str, mongo_db: AsyncIOMotorDatabase):
+    if not comment_task_id:
+        return {"data": [], "comments": []}
+
     item = await mongo_db[mongo_conf.COMMENT_NODE].find_one(
         {"tag_comment_task_id": comment_task_id}
     )
     if item:
-        return item["data"]
+        # 返回包含 data 和 comments 的字典
+        # essential_node.vue 期望 data 数组，每项有 name 字段
+        # hot_point.vue 期望 comments 数组，每项有 content 字段
+        return {
+            "data": item.get("data", []),
+            "comments": item.get("comments", [])
+        }
+    return {"data": [], "comments": []}
 
 
 async def get_tree_data(comment_task_id: str, mongo_db: AsyncIOMotorDatabase):
+    if not comment_task_id:
+        return {"tag_comment_task_id": "", "data": None}
+
     try:
         data = await mongo_db[mongo_conf.COMMENT_TREE].find_one(
             {"tag_comment_task_id": comment_task_id}
         )
-        if data:
+        if data and "data" in data:
             editJson(data["data"])
             return {
                 "tag_comment_task_id": data["tag_comment_task_id"],
                 "data": data["data"],
             }
+        return {"tag_comment_task_id": comment_task_id, "data": None}
     except Exception as e:
         return {"error": str(e)}
 

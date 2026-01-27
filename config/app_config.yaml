@@ -1,0 +1,138 @@
+# ============================================
+# 话题与用户画像分析系统 - 统一配置文件
+# ============================================
+# 说明：本文件集中管理系统中所有常用配置参数
+# 修改配置后，部分服务可能需要重启才能生效
+# ============================================
+
+# --------------------------------------------
+# 服务配置
+# --------------------------------------------
+server:
+  # 后端 API 端口
+  backend_port: 5000
+  # 爬虫服务端口
+  crawler_port: 8001
+  # 前端开发服务器端口
+  frontend_port: 8080
+
+# --------------------------------------------
+# 数据库配置
+# --------------------------------------------
+database:
+  # MongoDB 配置
+  mongodb:
+    host: "127.0.0.1"
+    port: 27017
+    db_name: "public_opinion_analysis_system"
+  
+  # Redis 配置 (Celery Broker/Backend)
+  redis:
+    host: "127.0.0.1"
+    port: 6379
+    broker_db: 0
+    backend_db: 1
+  
+  # Elasticsearch 配置
+  elasticsearch:
+    host: "127.0.0.1:9200"
+    index: "weibo"
+    timeout: 60
+
+# --------------------------------------------
+# 爬虫配置
+# --------------------------------------------
+crawler:
+  # Cookie 配置 (移动端 weibo.cn)
+  cookies_mobile:
+    - "SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9WFn4RTK.8QWBOWxJELmM_iW5NHD95QNe0-NSKeXShe4Ws4DqcjeKsLXUspLMcvV9NyR; _T_WM=42766d4ad33015d04df6acdee3bf5ff0; SCF=AnQlhIQDmDsnR2XPm8qZhoPobZ_rxrJTT4iFZaVrwkhqxhs4yB6pil6tNBAMLWTRl4ldUNZshX3cKw_ma896NVs.; SUB=_2A25Eapt_DeRhGeFN7lUU8yrIyDWIHXVnCZK3rDV6PUJbktAYLUHNkW1NQBOyvUYlB664omGX6hHyMWj7sJTU8td1; ALF=1771468847"  
+  # Cookie 配置 (PC端 weibo.com)
+  cookies_pc:
+    - "SCF=AnQlhIQDmDsnR2XPm8qZhoPobZ_rxrJTT4iFZaVrwkhq1FHiUk48ozyoV-RgzuOwk04s_YwULXfKK-Br5CvHy5Q.; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9WFn4RTK.8QWBOWxJELmM_iW5NHD95QNe0-NSKeXShe4Ws4DqcjeKsLXUspLMcvV9NyR; SUB=_2A25Eapt-DeRhGeFN7lUU8yrIyDWIHXVnCZK2rDV8PUNbmtAYLWfDkW9NQBOyvUtzITfgvpi-f8dh8NEGS07NgB-r; ALF=02_1771468846; SINAGLOBAL=3101507880258.5005.1768877588325; ULV=1768877588326:1:1:1:3101507880258.5005.1768877588325:; PC_TOKEN=be10f1679d; XSRF-TOKEN=Lrr8c2FPguVs8ba1-I4WT9km; WBPSESS=_k8iT6eHi6f6WKxkBzs9TkVXTZ-a5ZSm2i-2OZYrwWc1uu4AwrBg5U51_D41vPt31ojFkhp1-1c_kONqukuMkQo-4uUftsT_z2NqB_fzYn6_675uul-1Sn9NkoVKhMDBc_wDOx35LrAO1mU7XMOF5A=="
+  
+  # 代理配置
+  proxy:
+    enabled: false
+    # 代理列表 [host, port]
+    proxies:
+      - ["", 0]
+  
+  # 请求配置
+  request:
+    # 请求超时时间（秒）
+    timeout: 30
+    # 请求失败重试次数
+    retry_times: 3
+    # User-Agent (2026年1月最新版本)
+    # 说明：User-Agent 需要定期更新，建议每3-6个月检查一次
+    # 获取最新 UA: 在 Chrome 浏览器中访问 chrome://version/ 或 https://www.whatismybrowser.com/detect/what-is-my-user-agent
+    # 当前配置为 Chrome 131 (2026年1月)
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+    
+  
+  # 分页配置
+  pagination:
+    # 每页数据量
+    page_size: 100
+    # 搜索接口最大页数限制
+    search_max_pages: 50
+    # 转发爬取最大页数限制
+    repost_max_pages: 300
+  
+  # 延迟配置（防止反爬）
+  delay:
+    # 请求间隔最小值（秒）
+    min_interval: 3
+    # 请求间隔最大值（秒）
+    max_interval: 15
+    # 用户信息爬取延迟范围
+    user_info_delay_min: 5
+    user_info_delay_max: 10
+    # 失败后延迟范围
+    failure_delay_min: 5
+    failure_delay_max: 10
+
+# --------------------------------------------
+# 数据分析配置
+# --------------------------------------------
+analysis:
+  # 聚类配置
+  clustering:
+    # 最小文档数量（少于此数量跳过聚类）
+    min_documents: 5
+    # 聚类超时时间（秒）
+    timeout: 300
+  
+  # 词云配置
+  wordcloud:
+    # 最大词数
+    max_words: 100
+    # 停用词过滤
+    filter_stopwords: true
+  
+  # 趋势分析配置
+  trend:
+    # 时间粒度（day/hour）
+    time_granularity: "day"
+
+# --------------------------------------------
+# 日志配置
+# --------------------------------------------
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # 是否输出详细的拦截诊断日志
+  verbose_block_log: false
+  # 是否输出完整的接口返回 JSON
+  verbose_result_log: false
+
+# --------------------------------------------
+# 任务配置
+# --------------------------------------------
+task:
+  # Celery Worker 并发数
+  worker_concurrency: 4
+  # 任务超时时间（秒）
+  task_timeout: 3600
+  # 任务过期时间（秒）- 超过此时间未执行的任务标记为过期
+  task_expire_time: 3600
