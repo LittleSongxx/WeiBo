@@ -275,17 +275,20 @@ def calculate_local_hot_data(tag: str, tag_id: str):
         print(f"[热度任务] 总热度统计: 微博数={total_count}, 点赞={total_likes}, 转发={total_reposts}, 评论={total_comments}, 总热度={total_heat}")
 
         # 检查时间分布，判断是否需要使用模拟数据
+        # 注意：created_at 是微博发布时间，create_time 是爬取时间
+        # 优先使用 created_at（真实发布时间）
         date_set = set()
         now = datetime.datetime.now()
 
         for weibo in all_weibos:
-            create_time = (
-                weibo.get("create_time")
-                or weibo.get("created_at")
+            # 优先使用 created_at（微博发布时间），其次才是 create_time（可能是爬取时间）
+            time_value = (
+                weibo.get("created_at")
+                or weibo.get("create_time")
                 or weibo.get("timestamp")
             )
-            if create_time:
-                parsed_time = parse_weibo_time(create_time)
+            if time_value:
+                parsed_time = parse_weibo_time(time_value)
                 if parsed_time:
                     date_set.add(parsed_time.strftime("%Y-%m-%d"))
 
@@ -329,16 +332,17 @@ def calculate_local_hot_data(tag: str, tag_id: str):
                 date_stats = {}
 
                 for weibo in all_weibos:
-                    create_time = (
-                        weibo.get("create_time")
-                        or weibo.get("created_at")
+                    # 优先使用 created_at（微博发布时间）
+                    time_value = (
+                        weibo.get("created_at")
+                        or weibo.get("create_time")
                         or weibo.get("timestamp")
                     )
 
-                    if create_time is None:
+                    if time_value is None:
                         continue
 
-                    parsed_time = parse_weibo_time(create_time)
+                    parsed_time = parse_weibo_time(time_value)
                     if parsed_time is None:
                         continue
 
